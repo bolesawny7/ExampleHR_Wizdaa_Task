@@ -1,14 +1,12 @@
 import request from 'supertest';
 import { buildTestApp } from '../helpers/app.js';
-import { HcmOutboxWorker } from '../../src/hcm/hcm-outbox.worker.js';
 
 describe('Admin API (e2e)', () => {
-  let harness, server, worker;
+  let harness, server;
 
   beforeEach(async () => {
     harness = await buildTestApp();
     server = harness.app.getHttpServer();
-    worker = harness.app.get(HcmOutboxWorker);
     harness.seedBalance({
       employeeId: 'E-1', locationId: 'L-1', leaveType: 'ANNUAL', balance: 10,
     });

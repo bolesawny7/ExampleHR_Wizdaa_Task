@@ -1,18 +1,17 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { HcmPermanentError, HcmTransientError } from '../common/errors.js';
 
 /**
  * Outbound HCM client.
  *
- * We abstract HCM behind a tiny interface so the outbox worker can be tested
- * against an in-memory fake.  A 4xx response (except 408 / 429) is treated
- * as a *permanent* error that retries cannot fix.  Everything else —
- * timeouts, 5xx, network errors — is *transient* and schedules a retry.
+ * A 4xx response (except 408 / 429) is treated as a *permanent* error that
+ * retries cannot fix.  Everything else — timeouts, 5xx, network errors —
+ * is *transient* and schedules a retry.  The `_fetch` field is swappable
+ * so tests can inject an in-process mock without opening sockets.
  */
 @Injectable()
 export class HcmClient {
   constructor(config) {
-    this._logger = new Logger('HcmClient');
     this._baseUrl = config.hcmBaseUrl;
     this._apiKey = config.hcmApiKey;
     this._fetch = globalThis.fetch;
@@ -63,12 +62,6 @@ export class HcmClient {
                    externalRequestId, correlationId }) {
     return this._request('POST', '/api/v1/time-off', {
       employeeId, locationId, leaveType, days, startDate, endDate,
-      externalRequestId, correlationId,
-    });
-  }
-
-  releaseBalance({ externalRequestId, correlationId }) {
-    return this._request('POST', '/api/v1/time-off/release', {
       externalRequestId, correlationId,
     });
   }

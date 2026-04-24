@@ -61,14 +61,6 @@ export class DatabaseService {
     return this._db;
   }
 
-  prepare(sql) {
-    return this.db.prepare(sql);
-  }
-
-  exec(sql) {
-    return this.db.exec(sql);
-  }
-
   /**
    * Run `fn(db, payload)` inside a BEGIN IMMEDIATE transaction.  Returns the
    * callback's return value, or throws (in which case the txn is rolled back).

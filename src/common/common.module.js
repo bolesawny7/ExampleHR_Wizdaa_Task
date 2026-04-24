@@ -10,8 +10,8 @@ import { IdempotencyService } from './idempotency.service.js';
     { provide: Clock, useFactory: () => new Clock() },
     {
       provide: AuditService,
-      useFactory: (db, clock) => new AuditService(db.db, clock),
-      inject: [DatabaseService, Clock],
+      useFactory: (clock) => new AuditService(clock),
+      inject: [Clock],
     },
     {
       provide: IdempotencyService,

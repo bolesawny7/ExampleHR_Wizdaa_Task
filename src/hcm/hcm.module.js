@@ -1,5 +1,4 @@
 import { Module } from '@nestjs/common';
-import { AuditService } from '../common/audit.service.js';
 import { Clock } from '../common/clock.js';
 import { ConfigService } from '../config/config.service.js';
 import { BalancesRepository } from '../balances/balances.repository.js';
@@ -25,12 +24,9 @@ import { ReconciliationService } from './reconciliation.service.js';
     },
     {
       provide: HcmOutboxWorker,
-      useFactory: (outbox, hcm, timeOff, balances, audit, clock, config) =>
-        new HcmOutboxWorker(outbox, hcm, timeOff, balances, audit, clock, config),
-      inject: [
-        HcmOutboxService, HcmClient, TimeOffService, BalancesService,
-        AuditService, Clock, ConfigService,
-      ],
+      useFactory: (outbox, hcm, timeOff, config) =>
+        new HcmOutboxWorker(outbox, hcm, timeOff, config),
+      inject: [HcmOutboxService, HcmClient, TimeOffService, ConfigService],
     },
     {
       provide: ReconciliationService,

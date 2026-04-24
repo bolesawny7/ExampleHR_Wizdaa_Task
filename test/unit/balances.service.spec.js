@@ -23,7 +23,7 @@ describe('BalancesService', () => {
     db = new DatabaseService(config);
     db.open();
     repo = new BalancesRepository(db);
-    audit = new AuditService(db.db, clock);
+    audit = new AuditService(clock);
     svc = new BalancesService(db, repo, audit, clock);
   });
 

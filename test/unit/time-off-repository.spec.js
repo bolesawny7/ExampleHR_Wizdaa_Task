@@ -18,7 +18,7 @@ describe('TimeOffRepository', () => {
 
   afterEach(() => db.close());
 
-  function base(id, overrides = {}) {
+  function row(id, overrides = {}) {
     return {
       id,
       employeeId: 'E-1',
@@ -38,54 +38,47 @@ describe('TimeOffRepository', () => {
     };
   }
 
-  test('insert & findById round-trip', () => {
-    repo.insert(db.db, base('r_1'));
-    const r = repo.findById('r_1');
+  test('insert & findByIdOrThrow round-trip', () => {
+    repo.insert(db.db, row('r_1'));
+    const r = repo.findByIdOrThrow('r_1');
     expect(r.id).toBe('r_1');
+    expect(r.state).toBe('PENDING');
   });
 
-  test('findByIdOrThrow throws for missing', () => {
+  test('findByIdOrThrow throws NotFoundError for missing id', () => {
     expect(() => repo.findByIdOrThrow('missing')).toThrow(NotFoundError);
   });
 
   test('listForEmployee orders by createdAt desc', () => {
-    repo.insert(db.db, base('r_1', { createdAt: 1 }));
-    repo.insert(db.db, base('r_2', { createdAt: 2 }));
-    const list = repo.listForEmployee('E-1');
-    expect(list.map((r) => r.id)).toEqual(['r_2', 'r_1']);
+    repo.insert(db.db, row('r_1', { createdAt: 1 }));
+    repo.insert(db.db, row('r_2', { createdAt: 2 }));
+    expect(repo.listForEmployee('E-1').map((r) => r.id)).toEqual(['r_2', 'r_1']);
   });
 
   test('listPendingForManager returns only PENDING for that manager', () => {
-    repo.insert(db.db, base('r_1'));
-    repo.insert(db.db, base('r_2', { state: 'APPROVED' }));
-    repo.insert(db.db, base('r_3', { managerId: 'M-9' }));
-    const list = repo.listPendingForManager('M-1');
-    expect(list.map((r) => r.id)).toEqual(['r_1']);
+    repo.insert(db.db, row('r_1'));
+    repo.insert(db.db, row('r_2', { state: 'APPROVED' }));
+    repo.insert(db.db, row('r_3', { managerId: 'M-9' }));
+    expect(repo.listPendingForManager('M-1').map((r) => r.id)).toEqual(['r_1']);
   });
 
-  test('listByState filters and orders', () => {
-    repo.insert(db.db, base('r_1', { state: 'APPROVED', updatedAt: 1 }));
-    repo.insert(db.db, base('r_2', { state: 'APPROVED', updatedAt: 2 }));
-    const list = repo.listByState('APPROVED');
-    expect(list.map((r) => r.id)).toEqual(['r_1', 'r_2']);
-  });
-
-  test('updateState is a no-op when the fromState does not match', () => {
-    repo.insert(db.db, base('r_1'));
+  test('updateState is a no-op when fromState does not match', () => {
+    repo.insert(db.db, row('r_1'));
     const ok = repo.updateState(db.db, 'r_1', 'APPROVED', 'CONSUMED', clock.now());
     expect(ok).toBe(false);
-    expect(repo.findById('r_1').state).toBe('PENDING');
+    expect(repo.findByIdOrThrow('r_1').state).toBe('PENDING');
   });
 
-  test('updateState applies when fromState matches', () => {
-    repo.insert(db.db, base('r_1'));
+  test('updateState applies when fromState matches and persists patch fields', () => {
+    repo.insert(db.db, row('r_1'));
     const ok = repo.updateState(
       db.db, 'r_1', 'PENDING', 'APPROVED', clock.now(),
-      { approverId: 'M-1', approvedAt: clock.now() },
+      { approverId: 'M-1', approvedAt: clock.now(), externalRequestId: 'ext_x' },
     );
     expect(ok).toBe(true);
-    const r = repo.findById('r_1');
+    const r = repo.findByIdOrThrow('r_1');
     expect(r.state).toBe('APPROVED');
     expect(r.approverId).toBe('M-1');
+    expect(r.externalRequestId).toBe('ext_x');
   });
 });

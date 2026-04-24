@@ -40,15 +40,13 @@ describe('IdempotencyService', () => {
     expect(svc.lookup('k1', 'POST /a', 'E-1')).toBeNull();
   });
 
-  test('prune removes all expired rows', () => {
-    svc.store('k1', 'POST /a', 'E-1', 200, { a: 1 });
-    svc.store('k2', 'POST /a', 'E-1', 200, { a: 2 });
-    clock.advance(25 * 60 * 60 * 1000);
-    expect(svc.prune()).toBe(2);
-  });
-
-  test('missing key returns null', () => {
+  test('missing key returns null without touching DB', () => {
     expect(svc.lookup(undefined, 'POST /a', 'E-1')).toBeNull();
     expect(svc.lookup('', 'POST /a', 'E-1')).toBeNull();
+  });
+
+  test('store is a no-op when key is missing', () => {
+    svc.store(undefined, 'POST /a', 'E-1', 200, { a: 1 });
+    expect(svc.lookup(undefined, 'POST /a', 'E-1')).toBeNull();
   });
 });

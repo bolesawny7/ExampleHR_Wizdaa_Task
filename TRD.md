@@ -456,8 +456,8 @@ webhooks (which are signed).
 |--------|------|-------------|
 | POST | `/admin/reconcile` | Trigger reconciliation for a key or set. |
 | GET | `/admin/outbox` | Outbox inspection. |
-| POST | `/admin/outbox/:id/retry` | Force-retry a dead outbox entry. |
-| GET | `/admin/balances` | Global balances read (paginated). |
+| POST | `/admin/outbox/:id/retry` | Force-retry a dead / stalled outbox entry. |
+| POST | `/admin/outbox/drain` | Drain one outbox tick on demand. |
 
 ### 6.4 HCM inbound (signed, not JWT)
 

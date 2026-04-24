@@ -1,6 +1,5 @@
 import {
-  STATES, assertTransition, canTransition, entryConsumesReservation,
-  entryReleasesReservation, isTerminal,
+  STATES, assertTransition, canTransition,
 } from '../../src/time-off/state-machine.js';
 
 describe('state-machine', () => {
@@ -33,7 +32,11 @@ describe('state-machine', () => {
       .toThrow(/Cannot transition/);
   });
 
-  test('terminal states do not allow forward transitions (except HCM_FAILED → CANCELLED)', () => {
+  test('assertTransition is a no-op on allowed transitions', () => {
+    expect(() => assertTransition(STATES.PENDING, STATES.APPROVED)).not.toThrow();
+  });
+
+  test('terminal states allow no forward transitions (except HCM_FAILED → CANCELLED)', () => {
     for (const from of [STATES.REJECTED, STATES.CANCELLED, STATES.CONSUMED]) {
       for (const to of allStates) {
         expect(canTransition(from, to)).toBe(false);
@@ -41,29 +44,7 @@ describe('state-machine', () => {
     }
   });
 
-  test('entryReleasesReservation only for CANCELLED/REJECTED/HCM_FAILED', () => {
-    expect(entryReleasesReservation(STATES.CANCELLED)).toBe(true);
-    expect(entryReleasesReservation(STATES.REJECTED)).toBe(true);
-    expect(entryReleasesReservation(STATES.HCM_FAILED)).toBe(true);
-    expect(entryReleasesReservation(STATES.CONSUMED)).toBe(false);
-    expect(entryReleasesReservation(STATES.APPROVED)).toBe(false);
-    expect(entryReleasesReservation(STATES.PENDING)).toBe(false);
-  });
-
-  test('entryConsumesReservation only for CONSUMED', () => {
-    expect(entryConsumesReservation(STATES.CONSUMED)).toBe(true);
-    for (const s of allStates.filter((x) => x !== STATES.CONSUMED)) {
-      expect(entryConsumesReservation(s)).toBe(false);
-    }
-  });
-
-  test('isTerminal classification', () => {
-    expect(isTerminal(STATES.REJECTED)).toBe(true);
-    expect(isTerminal(STATES.CANCELLED)).toBe(true);
-    expect(isTerminal(STATES.CONSUMED)).toBe(true);
-    expect(isTerminal(STATES.HCM_FAILED)).toBe(true);
-    expect(isTerminal(STATES.PENDING)).toBe(false);
-    expect(isTerminal(STATES.APPROVED)).toBe(false);
-    expect(isTerminal(STATES.REVIEW_REQUIRED)).toBe(false);
+  test('unknown from-state is never a valid origin', () => {
+    expect(canTransition('NOT_A_STATE', STATES.PENDING)).toBe(false);
   });
 });

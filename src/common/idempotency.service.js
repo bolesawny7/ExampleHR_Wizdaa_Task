@@ -54,14 +54,4 @@ export class IdempotencyService {
       JSON.stringify(response), now, now + TTL_MS,
     );
   }
-
-  /**
-   * Housekeeping. Call from a scheduled job.
-   */
-  prune() {
-    const res = this._db.prepare(
-      'DELETE FROM idempotency_keys WHERE expires_at < ?',
-    ).run(this._clock.now());
-    return res.changes;
-  }
 }

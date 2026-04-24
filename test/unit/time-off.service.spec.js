@@ -16,7 +16,7 @@ function build() {
   });
   const db = new DatabaseService(config);
   db.open();
-  const audit = new AuditService(db.db, clock);
+  const audit = new AuditService(clock);
   const balancesRepo = new BalancesRepository(db);
   const balancesService = new BalancesService(db, balancesRepo, audit, clock);
   const outbox = new HcmOutboxService(db, clock, config);

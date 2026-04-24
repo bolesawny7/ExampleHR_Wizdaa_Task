@@ -2,43 +2,38 @@ import { Injectable, Logger } from '@nestjs/common';
 import { HcmPermanentError } from '../common/errors.js';
 
 /**
- * Worker that drains the HCM outbox.
+ * Drains the HCM outbox.
  *
  * On each tick:
  *   1. Claim due rows (INFLIGHT).
- *   2. For each, call the HCM client.
- *   3. If success, mark done and transition the request to CONSUMED/etc.
- *   4. If permanent failure, mark request HCM_FAILED and outbox DONE.
- *   5. If transient failure, reschedule with backoff.
+ *   2. For each, call `HcmClient.consumeBalance`.
+ *   3. On success → mark request CONSUMED, outbox row DONE.
+ *   4. On permanent failure (4xx) → mark request HCM_FAILED, outbox row DONE.
+ *   5. On transient failure → reschedule with exponential backoff.
  *
- * Defensive step:  before a CONSUME call we re-read HCM's current balance.
- * If HCM says the employee now has less than what we're about to consume,
- * we bail and flag the request REVIEW_REQUIRED instead of silently
- * triggering HCM to reject or (worse) succeed with a negative balance.
+ * Defensive step: before each CONSUME we re-read HCM's realtime balance.
+ * If HCM now reports less than what we're about to consume we bail and
+ * flag the request REVIEW_REQUIRED instead of relying on HCM to reject
+ * (which the TRD §C4 documents cannot be trusted).
+ *
+ * CONSUME is currently the only outbox op; new ops can be added by
+ * extending `_handleRow` with additional dispatch branches.
  */
 @Injectable()
 export class HcmOutboxWorker {
-  constructor(outbox, hcmClient, timeOff, balances, audit, clock, config) {
+  constructor(outbox, hcmClient, timeOff, config) {
     this._logger = new Logger('HcmOutboxWorker');
     this._outbox = outbox;
     this._hcm = hcmClient;
     this._timeOff = timeOff;
-    this._balances = balances;
-    this._audit = audit;
-    this._clock = clock;
     this._intervalMs = config.outboxIntervalMs;
     this._disabled = config.disableBackgroundJobs;
     this._timer = null;
     this._draining = false;
   }
 
-  onModuleInit() {
-    this.start();
-  }
-
-  onModuleDestroy() {
-    this.stop();
-  }
+  onModuleInit() { this.start(); }
+  onModuleDestroy() { this.stop(); }
 
   start() {
     if (this._disabled || this._timer) return;
@@ -55,20 +50,16 @@ export class HcmOutboxWorker {
     }
   }
 
-  /**
-   * Drain one batch.  Exposed so tests can step the worker deterministically.
-   */
+  /** Drain one batch.  Exposed so tests can step the worker deterministically. */
   async tick() {
     if (this._draining) return { processed: 0 };
     this._draining = true;
     try {
       const rows = this._outbox.claimDue();
-      let processed = 0;
       for (const row of rows) {
         await this._handleRow(row);
-        processed++;
       }
-      return { processed };
+      return { processed: rows.length };
     } finally {
       this._draining = false;
     }
@@ -76,42 +67,29 @@ export class HcmOutboxWorker {
 
   async _handleRow(row) {
     try {
-      if (row.op === 'CONSUME') {
-        // Defensive: re-check HCM's realtime balance first.
-        const { employeeId, locationId, leaveType, days } = row.payload;
-        let hcmView;
-        try {
-          hcmView = await this._hcm.getBalance({ employeeId, locationId, leaveType });
-        } catch (err) {
-          // If we can't verify, fall through and still try the write — HCM
-          // is the authority on whether the consume is OK.
-          hcmView = null;
-        }
-        if (hcmView && Number.isFinite(hcmView.balance) && hcmView.balance < days) {
-          this._timeOff.markReviewRequired(
-            row.requestId,
-            `HCM balance ${hcmView.balance} < requested ${days} at submit time`,
-          );
-          this._outbox.markDone(row.id);
-          return;
-        }
-        await this._hcm.consumeBalance(row.payload);
-        this._timeOff.markConsumed(row.requestId);
+      const { employeeId, locationId, leaveType, days } = row.payload;
+      let hcmView = null;
+      try {
+        hcmView = await this._hcm.getBalance({ employeeId, locationId, leaveType });
+      } catch {
+        // If we can't verify, fall through and let HCM be the authority on
+        // whether the consume is OK.
+      }
+      if (hcmView && Number.isFinite(hcmView.balance) && hcmView.balance < days) {
+        this._timeOff.markReviewRequired(
+          row.requestId,
+          `HCM balance ${hcmView.balance} < requested ${days} at submit time`,
+        );
         this._outbox.markDone(row.id);
         return;
       }
-      if (row.op === 'RELEASE') {
-        await this._hcm.releaseBalance(row.payload);
-        this._outbox.markDone(row.id);
-        return;
-      }
-      this._outbox.markDead(row.id, `Unknown op ${row.op}`);
+      await this._hcm.consumeBalance(row.payload);
+      this._timeOff.markConsumed(row.requestId);
+      this._outbox.markDone(row.id);
     } catch (err) {
       if (err instanceof HcmPermanentError) {
         try {
-          if (row.op === 'CONSUME') {
-            this._timeOff.markHcmFailed(row.requestId, err.message);
-          }
+          this._timeOff.markHcmFailed(row.requestId, err.message);
         } finally {
           this._outbox.markDone(row.id);
         }

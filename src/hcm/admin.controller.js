@@ -48,7 +48,7 @@ export class AdminController {
   async retry(@Param('id') id) {
     const n = Number(id);
     if (!Number.isFinite(n)) throw new ValidationError('invalid id');
-    this._outbox.resetForTest(n);
+    this._outbox.resetToPending(n);
     return this._worker.tick();
   }
 

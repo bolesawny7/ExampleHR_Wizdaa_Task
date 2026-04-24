@@ -41,10 +41,6 @@ export class TimeOffRepository {
     return row;
   }
 
-  findById(id, db = this.db) {
-    return db.prepare(`SELECT ${COLUMNS} FROM requests WHERE id = ?`).get(id) ?? null;
-  }
-
   listForEmployee(employeeId, db = this.db) {
     return db.prepare(`
       SELECT ${COLUMNS} FROM requests
@@ -58,12 +54,6 @@ export class TimeOffRepository {
        WHERE manager_id = ? AND state = 'PENDING'
        ORDER BY created_at ASC
     `).all(managerId);
-  }
-
-  listByState(state, db = this.db) {
-    return db.prepare(`
-      SELECT ${COLUMNS} FROM requests WHERE state = ? ORDER BY updated_at ASC
-    `).all(state);
   }
 
   updateState(db, id, fromState, toState, now, patch = {}) {

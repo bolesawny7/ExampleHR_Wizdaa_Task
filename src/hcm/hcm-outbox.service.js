@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 
 /**
  * Transactional outbox for HCM writes.
@@ -13,7 +13,6 @@ import { Injectable, Logger } from '@nestjs/common';
 @Injectable()
 export class HcmOutboxService {
   constructor(dbService, clock, config) {
-    this._logger = new Logger('HcmOutboxService');
     this._dbService = dbService;
     this._clock = clock;
     this._maxAttempts = config.outboxMaxAttempts;
@@ -90,15 +89,6 @@ export class HcmOutboxService {
     tx();
   }
 
-  markDead(id, errorMessage) {
-    const now = this._clock.now();
-    this._dbService.db.prepare(`
-      UPDATE hcm_outbox
-         SET status = 'DEAD', updated_at = ?, last_error = ?
-       WHERE id = ?
-    `).run(now, errorMessage, id);
-  }
-
   list({ status, limit = 100 } = {}) {
     if (status) {
       return this._dbService.db.prepare(`
@@ -119,7 +109,11 @@ export class HcmOutboxService {
     `).all(limit);
   }
 
-  resetForTest(id) {
+  /**
+   * Admin/ops helper: forcibly requeue a DEAD or stalled row so the worker
+   * picks it up on its next tick.  Clears attempts and the last error.
+   */
+  resetToPending(id) {
     this._dbService.db.prepare(`
       UPDATE hcm_outbox
          SET status = 'PENDING', next_attempt_at = 0, attempts = 0,

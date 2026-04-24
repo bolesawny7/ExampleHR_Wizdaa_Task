@@ -51,15 +51,20 @@ describe('HcmClient', () => {
       .rejects.toBeInstanceOf(HcmTransientError);
   });
 
-  test('releaseBalance POSTs release payload', async () => {
+  test('consumeBalance POSTs to /api/v1/time-off with payload', async () => {
     let captured;
     const c = clientWith(async (url, init) => {
       captured = { url, body: JSON.parse(init.body) };
       return { status: 200, ok: true, async text() { return '{}'; } };
     });
-    await c.releaseBalance({ externalRequestId: 'ext_x', correlationId: 'c' });
-    expect(captured.url).toMatch(/\/time-off\/release$/);
+    await c.consumeBalance({
+      employeeId: 'E', locationId: 'L', leaveType: 'ANNUAL',
+      days: 2, startDate: '2026-01-01', endDate: '2026-01-02',
+      externalRequestId: 'ext_x', correlationId: 'c',
+    });
+    expect(captured.url).toMatch(/\/api\/v1\/time-off$/);
     expect(captured.body.externalRequestId).toBe('ext_x');
+    expect(captured.body.days).toBe(2);
   });
 
   test('429 maps to transient', async () => {

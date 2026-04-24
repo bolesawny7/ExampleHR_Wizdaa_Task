@@ -1,13 +1,10 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import {
   BalanceNotFoundError, ForbiddenDomainError, InsufficientBalanceError,
 } from '../common/errors.js';
 import { newCorrelationId, newExternalRequestId, newRequestId } from '../common/ids.js';
 import { countDaysInclusive } from './dates.js';
-import {
-  STATES, assertTransition, canTransition, entryReleasesReservation,
-  entryConsumesReservation,
-} from './state-machine.js';
+import { STATES, assertTransition } from './state-machine.js';
 
 /**
  * Core business logic for the request lifecycle.
@@ -18,7 +15,6 @@ import {
 @Injectable()
 export class TimeOffService {
   constructor(dbService, repo, balancesRepo, audit, clock, outbox) {
-    this._logger = new Logger('TimeOffService');
     this._dbService = dbService;
     this._repo = repo;
     this._balancesRepo = balancesRepo;
@@ -191,11 +187,10 @@ export class TimeOffService {
       if (!isOwner && !isAdmin) {
         throw new ForbiddenDomainError('Cannot cancel another employee\'s request');
       }
-      if (!canTransition(before.state, STATES.CANCELLED)) {
-        // Special-case: CONSUMED already consumed the balance with HCM.
-        // Cancelling would require a separate "restore" flow; out of scope.
-        assertTransition(before.state, STATES.CANCELLED);
-      }
+      // Throws if not a legal transition.  CONSUMED requests cannot be
+      // cancelled because the balance is already gone from HCM — a separate
+      // "restore" flow would be needed and is out of scope.
+      assertTransition(before.state, STATES.CANCELLED);
       this._repo.updateState(db, requestId, before.state, STATES.CANCELLED, now);
       this._balancesRepo.releaseReservation(db, requestId, now);
 
@@ -226,9 +221,7 @@ export class TimeOffService {
       if (before.state === STATES.CONSUMED) return before;
       assertTransition(before.state, STATES.CONSUMED);
       this._repo.updateState(db, requestId, before.state, STATES.CONSUMED, now);
-      if (entryConsumesReservation(STATES.CONSUMED)) {
-        this._balancesRepo.consumeReservation(db, requestId, now);
-      }
+      this._balancesRepo.consumeReservation(db, requestId, now);
       const after = this._repo.findByIdOrThrow(requestId, db);
       this._audit.logInTx(db, {
         actorType: 'SYSTEM',
@@ -258,9 +251,7 @@ export class TimeOffService {
         db, requestId, before.state, STATES.HCM_FAILED, now,
         { hcmError: errorMessage },
       );
-      if (entryReleasesReservation(STATES.HCM_FAILED)) {
-        this._balancesRepo.releaseReservation(db, requestId, now);
-      }
+      this._balancesRepo.releaseReservation(db, requestId, now);
       const after = this._repo.findByIdOrThrow(requestId, db);
       this._audit.logInTx(db, {
         actorType: 'SYSTEM',

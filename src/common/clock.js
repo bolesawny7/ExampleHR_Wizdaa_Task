@@ -1,10 +1,8 @@
 import { Injectable } from '@nestjs/common';
 
 /**
- * A single source of truth for "now".
- *
- * Centralising time access lets tests freeze or step time deterministically
- * without monkey-patching Date globally.
+ * Single source of truth for "now".  Centralising time access lets tests
+ * freeze or step time deterministically without monkey-patching `Date`.
  */
 @Injectable()
 export class Clock {
@@ -13,10 +11,7 @@ export class Clock {
   }
 }
 
-/**
- * In-memory mutable clock for tests. Not exported from the barrel; tests
- * import directly to replace the provider.
- */
+/** Deterministic clock for tests. */
 export class TestClock extends Clock {
   constructor(start = 1_700_000_000_000) {
     super();
@@ -27,8 +22,5 @@ export class TestClock extends Clock {
   }
   advance(ms) {
     this._t += ms;
-  }
-  set(ms) {
-    this._t = ms;
   }
 }

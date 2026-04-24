@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import {
-  BalanceNotFoundError, ForbiddenDomainError, InsufficientBalanceError,
+  BalanceNotFoundError, ConflictError, ForbiddenDomainError,
+  InsufficientBalanceError, ValidationError,
 } from '../common/errors.js';
 import { newCorrelationId, newExternalRequestId, newRequestId } from '../common/ids.js';
 import { countDaysInclusive } from './dates.js';
@@ -30,7 +31,7 @@ export class TimeOffService {
    */
   createRequest({ actor, input }) {
     const days = countDaysInclusive(input.startDate, input.endDate);
-    if (days <= 0) throw new Error('days must be positive');
+    if (days <= 0) throw new ValidationError('days must be positive');
     const id = newRequestId();
     const correlationId = newCorrelationId();
     const now = this._clock.now();
@@ -114,7 +115,10 @@ export class TimeOffService {
         db, requestId, before.state, STATES.APPROVED, now,
         { approverId: actor.sub, approvedAt: now, externalRequestId },
       );
-      if (!ok) throw new Error('Concurrent update; request state changed');
+      if (!ok) {
+        throw new ConflictError('CONCURRENT_UPDATE',
+          'Request state changed concurrently; please retry.');
+      }
 
       this._outbox.enqueue(db, {
         requestId,
@@ -158,7 +162,10 @@ export class TimeOffService {
         db, requestId, before.state, STATES.REJECTED, now,
         { approverId: actor.sub, hcmError: reason },
       );
-      if (!ok) throw new Error('Concurrent update');
+      if (!ok) {
+        throw new ConflictError('CONCURRENT_UPDATE',
+          'Request state changed concurrently; please retry.');
+      }
 
       this._balancesRepo.releaseReservation(db, requestId, now);
 

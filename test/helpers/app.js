@@ -1,9 +1,9 @@
-import { ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import express from 'express';
 import { AppModule } from '../../src/app.module.js';
 import { JwtService } from '../../src/auth/jwt.service.js';
 import { Clock, TestClock } from '../../src/common/clock.js';
+import { buildValidationPipe } from '../../src/common/validation.js';
 import { ConfigService } from '../../src/config/config.service.js';
 import { DatabaseService } from '../../src/database/database.service.js';
 import { HcmClient } from '../../src/hcm/hcm.client.js';
@@ -45,11 +45,7 @@ export async function buildTestApp(overrides = {}) {
   app.use(express.json({
     verify: (req, _res, buf) => { req.rawBody = buf; },
   }));
-  app.useGlobalPipes(new ValidationPipe({
-    whitelist: true,
-    forbidNonWhitelisted: true,
-    transform: true,
-  }));
+  app.useGlobalPipes(buildValidationPipe());
   await app.init();
 
   // Swap HcmClient's fetch for the in-process mock.

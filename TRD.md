@@ -139,27 +139,32 @@ Violations throw `InsufficientBalanceError` which the controller maps to HTTP
 when they actually have 15. Worse case: HR *reduces* a balance to 5 while we
 still have a 7-day reservation outstanding; on submit, HCM rejects.
 
-**Chosen solution: three-tier drift detection.**
+**Chosen solution: layered drift detection.**
 
-1. **Push-path (preferred):** HCM calls our `POST /hcm/balances/batch`
+1. **Push-path (HCM → us):** HCM calls our `POST /hcm/webhooks/batch`
    webhook with a signed payload. We replace the cached balance in an
    atomic transaction **that preserves all open reservations**. If the new
-   HCM balance is below current reservations, we raise a `NEGATIVE_DRIFT`
-   alert and mark affected requests `REVIEW_REQUIRED` instead of silently
-   failing.
-2. **Pull-path (scheduled):** `ReconciliationService` runs on a cron
-   (configurable, default every 15 min) calling HCM's realtime API for a
-   sliding window of recently-active employees, comparing and patching.
-3. **Just-in-time:** right before submitting an approved request to HCM, we
-   re-query HCM's realtime balance; if it disagrees with our cache by more
-   than tolerance, we reconcile first.
+   HCM balance is below current reservations, we emit a
+   `BALANCE_SNAPSHOT_NEGATIVE_DRIFT` audit event and mark affected
+   `APPROVED` requests as `REVIEW_REQUIRED` instead of silently failing.
+2. **Just-in-time (us → HCM):** right before submitting an approved
+   request to HCM, the outbox worker re-reads HCM's realtime balance; if
+   HCM now has less than the reservation, we bail out of the consume and
+   mark the request `REVIEW_REQUIRED`.
+3. **On-demand pull (ops → HCM):** `POST /admin/reconcile` lets an
+   operator trigger the same snapshot apply for a single key or for all
+   recently-active keys.  A scheduled-cron variant is a 30-line addition
+   when it becomes operationally necessary (§10); we intentionally did
+   not wire one in this exercise to avoid adding a background scheduler
+   with no production-sized workload to justify it.
 
 All three paths go through the same idempotent `applyHcmBalanceSnapshot()`
 service method, which:
 - Upserts the balance row with `updatedAt = now`.
 - Never touches `reservations`.
 - Recomputes `effective_balance` on demand (it is derived, not stored).
-- Emits `BalanceSnapshotApplied` audit event.
+- Emits a `BALANCE_SNAPSHOT_APPLIED` / `…_IGNORED_STALE` /
+  `…_NEGATIVE_DRIFT` audit event.
 
 **Alternatives considered.**
 
@@ -522,7 +527,7 @@ X-Hcm-Signature: sha256=...
 | Source of truth | HCM, locally cached | Local authoritative | PDF mandates HCM; otherwise drift on anniversaries. |
 | Concurrency | Pessimistic `BEGIN IMMEDIATE` | OCC with `version` | SQLite is single-writer; simpler; no retry loop. |
 | HCM side effect | Outbox + worker | Inline call | Inline pins latency to HCM and is not crash-safe. |
-| Drift detection | Push + pull + JIT | Pull only / Push only | Layered defense for a lying HCM. |
+| Drift detection | Push (batch webhook) + JIT (pre-consume check) + on-demand pull | Pull only / Push only | Layered defense for a lying HCM.  Scheduled pull deferred until real traffic demands it. |
 | Idempotency | Key+endpoint+actor in SQL | Redis | No extra infra; SQLite is fine at expected QPS. |
 | ORM | `better-sqlite3` direct + repository pattern | TypeORM / Prisma | Synchronous API matches SQLite; transactional control is explicit; smaller surface. |
 | Auth | JWT RS256 | Session | Stateless, already used across ExampleHR. |
@@ -572,9 +577,10 @@ three tiers:
 
 ### 9.4 Coverage target
 
-- **≥ 90% line, ≥ 85% branch** across `src/` (enforced in CI by Jest
-  thresholds).
-- Coverage HTML + lcov reports emitted to `coverage/`.
+- Jest thresholds enforce **≥ 90 %** on statements, lines, and functions
+  and **≥ 80 %** on branches across `src/`.  Current run: 93 % stmts /
+  80 %+ branches / 96 % funcs / 95 % lines.
+- Coverage HTML + lcov reports are emitted to `coverage/`.
 
 ## 10. Future Work (out of scope for this exercise)
 
@@ -583,4 +589,6 @@ three tiers:
 - Support partial-day requests (hours).
 - Carry-over / accrual policy engine (currently handled entirely in HCM).
 - Multi-tenant isolation at row level.
-- Full OpenAPI spec (Swagger module is plumbed but spec is partial).
+- OpenAPI/Swagger spec generation (not wired in this exercise).
+- Scheduled pull-path reconciliation job.
+- Rate limiting middleware.

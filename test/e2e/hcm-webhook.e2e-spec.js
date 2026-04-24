@@ -85,7 +85,7 @@ describe('HCM webhook (e2e)', () => {
     expect(balances.getEffectiveBalance('E-1', 'L-1', 'ANNUAL').effectiveBalance).toBe(8);
   });
 
-  test('rejects invalid entries with 400', async () => {
+  test('rejects invalid entries with 400 VALIDATION_ERROR (after signature check)', async () => {
     const res = await send('batch', {
       batchId: 'B-bad',
       balances: [
@@ -94,5 +94,19 @@ describe('HCM webhook (e2e)', () => {
     });
     expect(res.status).toBe(400);
     expect(res.body.error).toBe('VALIDATION_ERROR');
+  });
+
+  test('signature is checked BEFORE DTO validation (security: no info leak on bad sig)', async () => {
+    // Structurally invalid body but also bad signature: we must see 401,
+    // never 400, otherwise an attacker can probe the DTO shape without
+    // knowing the secret.
+    const res = await request(server)
+      .post('/hcm/webhooks/batch')
+      .set('Content-Type', 'application/json')
+      .set('X-Hcm-Timestamp', String(Date.now()))
+      .set('X-Hcm-Signature', 'sha256=deadbeef')
+      .send({ totally: 'invalid', balances: [] });
+    expect(res.status).toBe(401);
+    expect(res.body.error).toBe('INVALID_SIGNATURE');
   });
 });

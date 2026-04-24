@@ -56,6 +56,20 @@ export class TimeOffRepository {
     `).all(managerId);
   }
 
+  /**
+   * All non-terminal APPROVED requests for a balance key.  Used by the
+   * reconciliation service when HCM drift requires escalating APPROVED
+   * requests to REVIEW_REQUIRED.  Returns request IDs only — callers don't
+   * need the rest.
+   */
+  listApprovedIdsForKey(employeeId, locationId, leaveType, db = this.db) {
+    return db.prepare(`
+      SELECT id FROM requests
+       WHERE employee_id = ? AND location_id = ? AND leave_type = ?
+             AND state = 'APPROVED'
+    `).all(employeeId, locationId, leaveType).map((r) => r.id);
+  }
+
   updateState(db, id, fromState, toState, now, patch = {}) {
     const res = db.prepare(`
       UPDATE requests

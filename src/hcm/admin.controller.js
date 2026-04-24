@@ -1,9 +1,15 @@
-import { Body, Controller, Get, Inject, Param, Post, Query, UseGuards } from '@nestjs/common';
+import {
+  Body, Controller, Get, Inject, Param, Post, Query, UseGuards,
+} from '@nestjs/common';
 import { JwtAuthGuard, Roles } from '../auth/auth.guard.js';
 import { ValidationError } from '../common/errors.js';
+import { buildValidationPipe } from '../common/validation.js';
+import { ReconcileDto } from './dto/reconcile.dto.js';
 import { HcmOutboxService } from './hcm-outbox.service.js';
 import { HcmOutboxWorker } from './hcm-outbox.worker.js';
 import { ReconciliationService } from './reconciliation.service.js';
+
+const validateReconcile = buildValidationPipe({ expectedType: ReconcileDto });
 
 @Controller('/admin')
 @UseGuards(JwtAuthGuard)
@@ -20,17 +26,13 @@ export class AdminController {
 
   @Post('/reconcile')
   @Roles('admin')
-  async reconcile(@Body() body) {
-    if (body?.key) {
-      const { employeeId, locationId, leaveType } = body.key;
-      if (!employeeId || !locationId || !leaveType) {
-        throw new ValidationError('key.employeeId, key.locationId, key.leaveType required');
-      }
-      return this._reconciliation.reconcileKey({ employeeId, locationId, leaveType });
+  async reconcile(@Body(validateReconcile) body) {
+    if (body.key) {
+      return this._reconciliation.reconcileKey(body.key);
     }
     return this._reconciliation.reconcileActive({
-      sinceMs: body?.sinceMs,
-      limit: body?.limit,
+      sinceMs: body.sinceMs,
+      limit: body.limit,
     });
   }
 

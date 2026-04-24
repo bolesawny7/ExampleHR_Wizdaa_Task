@@ -161,11 +161,29 @@ describe('Time-Off HTTP API (e2e)', () => {
     expect(cancelled.body.state).toBe('CANCELLED');
   });
 
-  test('validation: missing fields → 400 VALIDATION_ERROR (via ValidationPipe)', async () => {
+  test('validation: missing fields → 400 with our unified VALIDATION_ERROR shape', async () => {
     const res = await request(server)
       .post('/me/requests')
       .set('Authorization', `Bearer ${harness.tokens.employee('E-1')}`)
       .send({ locationId: 'L-1' });
     expect(res.status).toBe(400);
+    expect(res.body.error).toBe('VALIDATION_ERROR');
+    expect(Array.isArray(res.body.details)).toBe(true);
+    // Every failing DTO field is reported with its property name.
+    const fields = res.body.details.map((d) => d.field).sort();
+    expect(fields).toEqual(expect.arrayContaining(['endDate', 'leaveType', 'startDate']));
+  });
+
+  test('validation: unknown body fields are rejected (whitelist + forbidNonWhitelisted)', async () => {
+    const res = await request(server)
+      .post('/me/requests')
+      .set('Authorization', `Bearer ${harness.tokens.employee('E-1', { managerId: 'M-1' })}`)
+      .send({
+        locationId: 'L-1', leaveType: 'ANNUAL',
+        startDate: '2026-05-04', endDate: '2026-05-06',
+        hackyExtra: 'please drop me',
+      });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('VALIDATION_ERROR');
   });
 });

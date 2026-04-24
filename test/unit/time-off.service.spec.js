@@ -186,6 +186,27 @@ describe('TimeOffService', () => {
       .toThrow(/Cannot transition from APPROVED/);
   });
 
+  test('approve surfaces ConflictError if the row is raced to a different state', () => {
+    const { svc, repo } = build();
+    const r = svc.createRequest({
+      actor: employee,
+      input: {
+        locationId: 'L-1', leaveType: 'ANNUAL',
+        startDate: '2026-05-04', endDate: '2026-05-06',
+      },
+    });
+    // Simulate a concurrent update: someone else moved the row to CANCELLED
+    // after we read `before` but before the state-guarded UPDATE runs.  The
+    // simplest way to force this is to stub the repo's updateState to miss.
+    const originalUpdate = repo.updateState.bind(repo);
+    repo.updateState = (...args) => {
+      if (args[3] === 'APPROVED') return false;
+      return originalUpdate(...args);
+    };
+    expect(() => svc.approve({ actor: manager, requestId: r.id }))
+      .toThrow(/CONCURRENT_UPDATE|concurrently/);
+  });
+
   test('two requests totalling > balance cannot both succeed (sequential)', () => {
     const { svc } = build();
     svc.createRequest({

@@ -1,25 +1,16 @@
 import {
   Body, Controller, Get, Headers, HttpCode, Inject, Param, Post, Req,
-  UseGuards, ValidationPipe,
+  UseGuards,
 } from '@nestjs/common';
 import { JwtAuthGuard, Roles } from '../auth/auth.guard.js';
 import { NotFoundError } from '../common/errors.js';
 import { IdempotencyService } from '../common/idempotency.service.js';
+import { buildValidationPipe } from '../common/validation.js';
 import { CreateRequestDto, RejectRequestDto } from './dto/create-request.dto.js';
 import { TimeOffService } from './time-off.service.js';
 
-const validateCreate = new ValidationPipe({
-  expectedType: CreateRequestDto,
-  whitelist: true,
-  forbidNonWhitelisted: true,
-  transform: true,
-});
-
-const validateReject = new ValidationPipe({
-  expectedType: RejectRequestDto,
-  whitelist: true,
-  transform: true,
-});
+const validateCreate = buildValidationPipe({ expectedType: CreateRequestDto });
+const validateReject = buildValidationPipe({ expectedType: RejectRequestDto });
 
 @Controller()
 @UseGuards(JwtAuthGuard)

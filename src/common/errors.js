@@ -59,6 +59,12 @@ export class ValidationError extends DomainError {
   }
 }
 
+export class ConflictError extends DomainError {
+  constructor(code, message, details = {}) {
+    super(HttpStatus.CONFLICT, code, message, details);
+  }
+}
+
 export class BalanceNotFoundError extends DomainError {
   constructor(key) {
     super(HttpStatus.NOT_FOUND, 'BALANCE_NOT_FOUND', 'No balance for key', key);

@@ -1,7 +1,5 @@
 import { Type } from 'class-transformer';
-import {
-  IsInt, IsOptional, IsString, MaxLength, Min, ValidateNested,
-} from 'class-validator';
+import { IsInt, IsOptional, IsString, MaxLength, Min, ValidateNested } from 'class-validator';
 
 class ReconcileKeyDto {
   @IsString() @MaxLength(64) employeeId;

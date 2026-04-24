@@ -1,7 +1,14 @@
 import { Type } from 'class-transformer';
 import {
-  ArrayMinSize, IsArray, IsISO8601, IsNumber, IsOptional, IsString,
-  MaxLength, Min, ValidateNested,
+  ArrayMinSize,
+  IsArray,
+  IsISO8601,
+  IsNumber,
+  IsOptional,
+  IsString,
+  MaxLength,
+  Min,
+  ValidateNested,
 } from 'class-validator';
 
 /** One row in an HCM balance batch. */

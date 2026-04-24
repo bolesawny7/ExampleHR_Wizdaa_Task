@@ -16,8 +16,7 @@ import { BalancesService } from './balances.service.js';
     },
     {
       provide: BalancesService,
-      useFactory: (db, repo, audit, clock) =>
-        new BalancesService(db, repo, audit, clock),
+      useFactory: (db, repo, audit, clock) => new BalancesService(db, repo, audit, clock),
       inject: [DatabaseService, BalancesRepository, AuditService, Clock],
     },
   ],

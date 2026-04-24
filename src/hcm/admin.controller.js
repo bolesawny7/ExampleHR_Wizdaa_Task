@@ -1,15 +1,11 @@
-import {
-  Body, Controller, Get, Inject, Param, Post, Query,
-} from '@nestjs/common';
+import { Body, Controller, Get, Inject, Param, Post, Query } from '@nestjs/common';
 import { Roles } from '../auth/auth.guard.js';
 import { ValidationError } from '../common/errors.js';
-import { buildValidationPipe } from '../common/validation.js';
+import { Validate } from '../common/validation.js';
 import { ReconcileDto } from './dto/reconcile.dto.js';
 import { HcmOutboxService } from './hcm-outbox.service.js';
 import { HcmOutboxWorker } from './hcm-outbox.worker.js';
 import { ReconciliationService } from './reconciliation.service.js';
-
-const validateReconcile = buildValidationPipe({ expectedType: ReconcileDto });
 
 // JwtAuthGuard runs globally via APP_GUARD; only @Roles('admin') needed here.
 @Controller('/admin')
@@ -26,7 +22,7 @@ export class AdminController {
 
   @Post('/reconcile')
   @Roles('admin')
-  async reconcile(@Body(validateReconcile) body) {
+  reconcile(@Body(Validate(ReconcileDto)) body) {
     if (body.key) {
       return this._reconciliation.reconcileKey(body.key);
     }
@@ -47,7 +43,7 @@ export class AdminController {
 
   @Post('/outbox/:id/retry')
   @Roles('admin')
-  async retry(@Param('id') id) {
+  retry(@Param('id') id) {
     const n = Number(id);
     if (!Number.isFinite(n)) throw new ValidationError('invalid id');
     this._outbox.resetToPending(n);

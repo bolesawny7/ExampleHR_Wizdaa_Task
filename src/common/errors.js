@@ -24,8 +24,12 @@ export class InsufficientBalanceError extends DomainError {
 
 export class InvalidStateTransitionError extends DomainError {
   constructor(from, to) {
-    super(HttpStatus.CONFLICT, 'INVALID_STATE_TRANSITION',
-      `Cannot transition from ${from} to ${to}`, { from, to });
+    super(
+      HttpStatus.CONFLICT,
+      'INVALID_STATE_TRANSITION',
+      `Cannot transition from ${from} to ${to}`,
+      { from, to },
+    );
   }
 }
 

@@ -23,13 +23,18 @@ export const STATES = Object.freeze({
  * move to CANCELLED so ops can clean up after permanent HCM failures.
  */
 const TRANSITIONS = {
-  [STATES.PENDING]:         new Set([STATES.APPROVED, STATES.REJECTED, STATES.CANCELLED]),
-  [STATES.APPROVED]:        new Set([STATES.CONSUMED, STATES.CANCELLED, STATES.HCM_FAILED, STATES.REVIEW_REQUIRED]),
+  [STATES.PENDING]: new Set([STATES.APPROVED, STATES.REJECTED, STATES.CANCELLED]),
+  [STATES.APPROVED]: new Set([
+    STATES.CONSUMED,
+    STATES.CANCELLED,
+    STATES.HCM_FAILED,
+    STATES.REVIEW_REQUIRED,
+  ]),
   [STATES.REVIEW_REQUIRED]: new Set([STATES.APPROVED, STATES.REJECTED, STATES.CANCELLED]),
-  [STATES.REJECTED]:        new Set(),
-  [STATES.CANCELLED]:       new Set(),
-  [STATES.CONSUMED]:        new Set(),
-  [STATES.HCM_FAILED]:      new Set([STATES.CANCELLED]),
+  [STATES.REJECTED]: new Set(),
+  [STATES.CANCELLED]: new Set(),
+  [STATES.CONSUMED]: new Set(),
+  [STATES.HCM_FAILED]: new Set([STATES.CANCELLED]),
 };
 
 export function canTransition(from, to) {

@@ -1,4 +1,4 @@
-import { TestClock } from '../../src/common/clock.js';
+import { TestClock } from '../helpers/test-clock.js';
 import { IdempotencyService } from '../../src/common/idempotency.service.js';
 import { ConfigService } from '../../src/config/config.service.js';
 import { DatabaseService } from '../../src/database/database.service.js';
@@ -8,9 +8,13 @@ describe('IdempotencyService', () => {
 
   beforeEach(() => {
     clock = new TestClock();
-    db = new DatabaseService(new ConfigService({
-      NODE_ENV: 'test', JWT_SECRET: 'x', DATABASE_PATH: ':memory:',
-    }));
+    db = new DatabaseService(
+      new ConfigService({
+        NODE_ENV: 'test',
+        JWT_SECRET: 'x',
+        DATABASE_PATH: ':memory:',
+      }),
+    );
     db.open();
     svc = new IdempotencyService(db.db, clock);
   });
@@ -20,7 +24,8 @@ describe('IdempotencyService', () => {
   test('store then lookup returns the same response', () => {
     svc.store('k1', 'POST /x', 'E-1', 201, { id: 'r1' });
     expect(svc.lookup('k1', 'POST /x', 'E-1')).toEqual({
-      statusCode: 201, response: { id: 'r1' },
+      statusCode: 201,
+      response: { id: 'r1' },
     });
   });
 

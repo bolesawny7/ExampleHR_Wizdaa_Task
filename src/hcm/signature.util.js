@@ -13,10 +13,7 @@ const CLOCK_SKEW_MS = 5 * 60 * 1000;
 
 export function sign(secret, timestampMs, rawBody) {
   const canonical = `${timestampMs}.${rawBody}`;
-  const digest = crypto
-    .createHmac('sha256', secret)
-    .update(canonical)
-    .digest('hex');
+  const digest = crypto.createHmac('sha256', secret).update(canonical).digest('hex');
   return `sha256=${digest}`;
 }
 
@@ -27,10 +24,7 @@ export function verify({ secret, timestampMs, rawBody, signature, now = Date.now
   if (Math.abs(now - tsNum) > CLOCK_SKEW_MS) return false;
   const expected = sign(secret, tsNum, rawBody);
   try {
-    return crypto.timingSafeEqual(
-      Buffer.from(signature, 'utf8'),
-      Buffer.from(expected, 'utf8'),
-    );
+    return crypto.timingSafeEqual(Buffer.from(signature, 'utf8'), Buffer.from(expected, 'utf8'));
   } catch {
     return false;
   }

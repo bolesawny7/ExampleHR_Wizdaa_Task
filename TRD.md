@@ -13,10 +13,10 @@ The core engineering problem is **balance integrity under distributed state**:
 
 - HCM can mutate balances independently of us (anniversary grants, yearly
   accrual rollovers, manual adjustments by HR).
-- We mutate the *effective* available balance every time an employee files a
+- We mutate the _effective_ available balance every time an employee files a
   request (holding the balance until it is approved and consumed).
-- HCM's contract is defensive in name only — the spec says HCM *should* reject
-  invalid dimensions or negative balances, but *this may not be guaranteed*.
+- HCM's contract is defensive in name only — the spec says HCM _should_ reject
+  invalid dimensions or negative balances, but _this may not be guaranteed_.
   We must behave correctly even when HCM lies or is silent.
 
 This document defines the requirements, architecture, API, data model,
@@ -24,46 +24,46 @@ failure modes, security considerations, and testing strategy for the service.
 
 ## 2. Glossary
 
-| Term | Meaning |
-|------|---------|
-| **HCM** | Human Capital Management system (Workday/SAP). Source of truth for balances. |
-| **Balance** | Remaining time-off (in days) for a given `(employeeId, locationId, leaveType)` tuple. |
-| **Reservation** | Amount of a balance that is locally committed to pending/approved requests but not yet consumed by HCM. |
-| **Effective balance** | `hcm_balance - sum(open_reservations)`. What the employee sees and what we validate against. |
-| **Request** | A time-off request, going through a state machine. |
-| **Drift** | A discrepancy between our cached HCM balance and the authoritative HCM balance. |
-| **Reconciliation** | Process of detecting and healing drift. |
-| **Idempotency key** | A client-supplied unique key that makes retried writes safe. |
+| Term                  | Meaning                                                                                                 |
+| --------------------- | ------------------------------------------------------------------------------------------------------- |
+| **HCM**               | Human Capital Management system (Workday/SAP). Source of truth for balances.                            |
+| **Balance**           | Remaining time-off (in days) for a given `(employeeId, locationId, leaveType)` tuple.                   |
+| **Reservation**       | Amount of a balance that is locally committed to pending/approved requests but not yet consumed by HCM. |
+| **Effective balance** | `hcm_balance - sum(open_reservations)`. What the employee sees and what we validate against.            |
+| **Request**           | A time-off request, going through a state machine.                                                      |
+| **Drift**             | A discrepancy between our cached HCM balance and the authoritative HCM balance.                         |
+| **Reconciliation**    | Process of detecting and healing drift.                                                                 |
+| **Idempotency key**   | A client-supplied unique key that makes retried writes safe.                                            |
 
 ## 3. Requirements
 
 ### 3.1 Functional Requirements
 
-| # | Requirement |
-|---|-------------|
-| F1 | An employee can **view** their current balances per `(location, leaveType)`. |
-| F2 | An employee can **file** a time-off request with a date range and leave type. |
-| F3 | An employee can **cancel** their own pending/approved request (pre-consumption). |
-| F4 | A manager can **approve** or **reject** a request that is under their employee. |
-| F5 | The service **validates balance availability** before allowing a request to be filed and again before approval. |
-| F6 | The service **submits approved requests to HCM** to consume the balance. |
-| F7 | The service **receives a realtime balance update** (push from HCM or poll from HCM for any `(employeeId, locationId)`). |
-| F8 | The service **ingests a full-corpus batch** from HCM (for anniversaries, yearly refresh, corrections) without losing in-flight reservations. |
-| F9 | The service exposes **reconciliation** endpoints that detect and report drift. |
-| F10 | Every mutation is **audited** (who/what/when/why) for compliance. |
+| #   | Requirement                                                                                                                                  |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| F1  | An employee can **view** their current balances per `(location, leaveType)`.                                                                 |
+| F2  | An employee can **file** a time-off request with a date range and leave type.                                                                |
+| F3  | An employee can **cancel** their own pending/approved request (pre-consumption).                                                             |
+| F4  | A manager can **approve** or **reject** a request that is under their employee.                                                              |
+| F5  | The service **validates balance availability** before allowing a request to be filed and again before approval.                              |
+| F6  | The service **submits approved requests to HCM** to consume the balance.                                                                     |
+| F7  | The service **receives a realtime balance update** (push from HCM or poll from HCM for any `(employeeId, locationId)`).                      |
+| F8  | The service **ingests a full-corpus batch** from HCM (for anniversaries, yearly refresh, corrections) without losing in-flight reservations. |
+| F9  | The service exposes **reconciliation** endpoints that detect and report drift.                                                               |
+| F10 | Every mutation is **audited** (who/what/when/why) for compliance.                                                                            |
 
 ### 3.2 Non-Functional Requirements
 
-| # | Requirement | Rationale |
-|---|-------------|-----------|
-| N1 | **Balance integrity is never violated from our side.** The *effective balance* we expose is never negative. This is our single most important invariant. | If we tell an employee "you have 2 days" and we fail to stop a 3-day request, we lose their trust and create HR disputes. |
-| N2 | **Idempotent writes** for all mutation endpoints (client + HCM direction). | Retries are unavoidable in distributed systems. |
-| N3 | **At-least-once delivery** to HCM, with deduplication by `externalRequestId`. | The HCM realtime API can fail or time out. |
-| N4 | **Eventual consistency with HCM, within 5 minutes** under normal operation; **bounded divergence** under HCM outage. | Employees tolerate short delays but not stale data for days. |
-| N5 | **p95 latency** < 200ms for reads, < 500ms for writes that only touch local DB. HCM-round-trip writes are bounded by HCM. | Responsive UX. |
-| N6 | **All PII** (employeeId as opaque, no names in logs) is minimized. Auth is mandatory. | Compliance (GDPR, regional labour laws). |
-| N7 | **Recoverable from any partial failure** — process crash mid-HCM-call must not leak reservations. | Crash safety. |
-| N8 | **Observability**: every request gets a correlation ID; every HCM call is logged with outcome. | Ops, debuggability. |
+| #   | Requirement                                                                                                                                              | Rationale                                                                                                                 |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| N1  | **Balance integrity is never violated from our side.** The _effective balance_ we expose is never negative. This is our single most important invariant. | If we tell an employee "you have 2 days" and we fail to stop a 3-day request, we lose their trust and create HR disputes. |
+| N2  | **Idempotent writes** for all mutation endpoints (client + HCM direction).                                                                               | Retries are unavoidable in distributed systems.                                                                           |
+| N3  | **At-least-once delivery** to HCM, with deduplication by `externalRequestId`.                                                                            | The HCM realtime API can fail or time out.                                                                                |
+| N4  | **Eventual consistency with HCM, within 5 minutes** under normal operation; **bounded divergence** under HCM outage.                                     | Employees tolerate short delays but not stale data for days.                                                              |
+| N5  | **p95 latency** < 200ms for reads, < 500ms for writes that only touch local DB. HCM-round-trip writes are bounded by HCM.                                | Responsive UX.                                                                                                            |
+| N6  | **All PII** (employeeId as opaque, no names in logs) is minimized. Auth is mandatory.                                                                    | Compliance (GDPR, regional labour laws).                                                                                  |
+| N7  | **Recoverable from any partial failure** — process crash mid-HCM-call must not leak reservations.                                                        | Crash safety.                                                                                                             |
+| N8  | **Observability**: every request gets a correlation ID; every HCM call is logged with outcome.                                                           | Ops, debuggability.                                                                                                       |
 
 ## 4. Challenges & Design Decisions
 
@@ -76,8 +76,8 @@ solution and rejected alternatives.
 deduct locally without HCM consent, our ledger diverges. If we always ask HCM,
 we are unavailable whenever HCM is.
 
-**Chosen solution: HCM is the system of record; we keep a cached *materialized*
-view of HCM balance + a local ledger of *reservations*.**
+**Chosen solution: HCM is the system of record; we keep a cached _materialized_
+view of HCM balance + a local ledger of _reservations_.**
 
 ```
 effective_balance(employee, location, leaveType) =
@@ -85,8 +85,8 @@ effective_balance(employee, location, leaveType) =
       - SUM(reservation.days WHERE reservation.state = 'OPEN')
 ```
 
-We always display *effective balance* to the user. When a request is filed, we
-*atomically* insert a reservation row while verifying the invariant
+We always display _effective balance_ to the user. When a request is filed, we
+_atomically_ insert a reservation row while verifying the invariant
 `effective_balance >= requested_days`. HCM is the final authority when we
 submit the approved request; if HCM rejects, we roll the reservation back.
 
@@ -99,7 +99,7 @@ submit the approved request; if HCM rejects, we roll the reservation back.
   unavailable when HCM is, and HCM latencies (often seconds) are unacceptable
   in the hot path of "show me my balance."
 - **Event-sourced projection of HCM events.** Rejected as primary model —
-  HCM's realtime API is request/response, not event-stream. We *do* keep an
+  HCM's realtime API is request/response, not event-stream. We _do_ keep an
   audit-style append-only log of our own decisions (see §5.4).
 
 ### C2 — Balance race conditions
@@ -110,7 +110,7 @@ balance.
 
 **Chosen solution: pessimistic locking inside a single SQLite transaction,
 using `BEGIN IMMEDIATE` which acquires SQLite's `RESERVED` write lock.**
-Any competing `BEGIN IMMEDIATE` waits on `busy_timeout`.  The wrapper is
+Any competing `BEGIN IMMEDIATE` waits on `busy_timeout`. The wrapper is
 `DatabaseService.transaction(fn)`; inside `TimeOffService.createRequest`
 it does:
 
@@ -130,14 +130,14 @@ HTTP 409.
   contention. Pessimistic is simpler in single-writer SQLite.
 - **Distributed lock (Redis).** Overkill; we have one writer per DB anyway.
 - **Relying on HCM to reject.** Explicitly called out in the problem statement
-  as untrustworthy: *"this may not be always guaranteed; we want to be
-  defensive about it."*
+  as untrustworthy: _"this may not be always guaranteed; we want to be
+  defensive about it."_
 
 ### C3 — HCM drift (unilateral balance changes)
 
 **Problem.** On Monday the employee has 10 days in HCM. On Tuesday HR grants a
 5-day anniversary bonus in HCM. Our cache still says 10. The employee sees 10
-when they actually have 15. Worse case: HR *reduces* a balance to 5 while we
+when they actually have 15. Worse case: HR _reduces_ a balance to 5 while we
 still have a 7-day reservation outstanding; on submit, HCM rejects.
 
 **Chosen solution: layered drift detection.**
@@ -154,13 +154,14 @@ still have a 7-day reservation outstanding; on submit, HCM rejects.
    mark the request `REVIEW_REQUIRED`.
 3. **On-demand pull (ops → HCM):** `POST /admin/reconcile` lets an
    operator trigger the same snapshot apply for a single key or for all
-   recently-active keys.  A scheduled-cron variant is a 30-line addition
+   recently-active keys. A scheduled-cron variant is a 30-line addition
    when it becomes operationally necessary (§10); we intentionally did
    not wire one in this exercise to avoid adding a background scheduler
    with no production-sized workload to justify it.
 
 All three paths go through the same idempotent `applyHcmBalanceSnapshot()`
 service method, which:
+
 - Upserts the balance row with `updatedAt = now`.
 - Never touches `reservations`.
 - Recomputes `effective_balance` on demand (it is derived, not stored).
@@ -179,27 +180,27 @@ service method, which:
 
 **Problem.** HCM can (a) be unavailable, (b) be slow, (c) 200-OK but with
 wrong data, (d) 500 but actually persist, (e) silently accept a negative
-balance. We must be defensive about *every* one of these.
+balance. We must be defensive about _every_ one of these.
 
-**Chosen solution: explicit *outbox* pattern for outbound writes, bounded
+**Chosen solution: explicit _outbox_ pattern for outbound writes, bounded
 local invariant for reads.**
 
-- **Outbox:** when we approve a request, the act of approval *does not* call
+- **Outbox:** when we approve a request, the act of approval _does not_ call
   HCM. Instead, it writes a row to `hcm_outbox` inside the same transaction
   that changes the request state. A background worker pops from the outbox,
   calls HCM, and marks success or retries. This makes approval durable even
   if HCM is down.
 - **Retry policy:** exponential backoff `min(60 s, 2^attempt × 500 ms)`
-  with ±30 % jitter, capped at `OUTBOX_MAX_ATTEMPTS` (default 8).  With
+  with ±30 % jitter, capped at `OUTBOX_MAX_ATTEMPTS` (default 8). With
   the default cap the worst-case total wait before `DEAD` is roughly
   2 minutes — appropriate for the interactive approval flow in this
-  exercise.  For production use, ops tune the cap + floor to match the
+  exercise. For production use, ops tune the cap + floor to match the
   HCM's realistic outage profile (the §10 work item mentions moving the
-  outbox to a real message queue for longer-horizon retries).  Permanent
+  outbox to a real message queue for longer-horizon retries). Permanent
   (4xx) HCM failures transition the request to `HCM_FAILED` and release
   the reservation immediately without further retries.
 - **Double-check before side-effect:** before the outbox worker calls
-  `hcm.consumeBalance()`, it re-reads the *current* HCM balance via the
+  `hcm.consumeBalance()`, it re-reads the _current_ HCM balance via the
   realtime API. If HCM's balance is lower than our expected value, we
   reconcile and re-evaluate.
 - **Defensive reads:** every write-that-deducts against HCM is guarded by our
@@ -212,7 +213,7 @@ local invariant for reads.**
   approval latency to HCM latency; rollbacks on crash are hard.
 - **Full two-phase commit with HCM.** HCM doesn't support 2PC — impossible.
 - **Saga with compensating transactions.** That is effectively what our
-  outbox + state machine implements; we chose the term *outbox* for
+  outbox + state machine implements; we chose the term _outbox_ for
   clarity.
 
 ### C5 — Idempotency
@@ -224,35 +225,35 @@ create two reservations.
 by `(key, endpoint, actor_id)`** — scoping by actor+endpoint prevents two
 different principals from colliding on the same opaque key and prevents a
 key intended for `POST /requests` from being replayed against
-`POST /requests/:id/cancel`.  The primary key
-`(key, endpoint, actor_id)` on `idempotency_keys` enforces this.  First
+`POST /requests/:id/cancel`. The primary key
+`(key, endpoint, actor_id)` on `idempotency_keys` enforces this. First
 call stores the response and HTTP status; subsequent calls return it.
-TTL 24 h.  The outbound side is kept idempotent by sending the same
+TTL 24 h. The outbound side is kept idempotent by sending the same
 `externalRequestId` on every retry.
 
 ### C6 — Security & authorization
 
-- **AuthN.** JWT bearer token via `Authorization: Bearer <jwt>`.  HS256 with
+- **AuthN.** JWT bearer token via `Authorization: Bearer <jwt>`. HS256 with
   a shared secret is used in this exercise for simplicity; production should
-  switch to RS256 + JWKS fetched from the ExampleHR SSO.  Tokens carry
+  switch to RS256 + JWKS fetched from the ExampleHR SSO. Tokens carry
   `sub` (employeeId), `roles[]` (`employee`, `manager`, `admin`), `orgId`,
   and optional `managerId`.
 - **AuthZ.** `@Roles()` metadata is enforced by `JwtAuthGuard`, plus
-  service-layer *data-ownership* checks (an employee can only read/write
+  service-layer _data-ownership_ checks (an employee can only read/write
   their own resources; a manager can only approve/reject requests whose
-  `managerId` matches their `sub`).  Role ≠ authorization on its own.
+  `managerId` matches their `sub`). Role ≠ authorization on its own.
 - **Webhook signature.** HCM webhooks are signed with HMAC-SHA256 over
   `${timestamp}.${rawBody}`, verified in constant time with a ±5 minute
-  replay window.  Enforced by `HcmSignatureGuard`, which runs *before* the
+  replay window. Enforced by `HcmSignatureGuard`, which runs _before_ the
   `ValidationPipe` so a bad signature never leaks DTO shape.
 - **Input validation.** Every POST body has a `class-validator` DTO with
-  `whitelist` + `forbidNonWhitelisted`.  Validation errors are wrapped into
+  `whitelist` + `forbidNonWhitelisted`. Validation errors are wrapped into
   our own `{ error: "VALIDATION_ERROR", message, details }` shape via a
   single `buildValidationPipe()` factory.
 - **SQL injection.** All DB access goes through `better-sqlite3` prepared
   statements; there is no string interpolation in SQL anywhere.
-- **Secrets.** Loaded from env at boot.  `JWT_SECRET` is required and the
-  service refuses to start without it outside tests.  Secrets are never
+- **Secrets.** Loaded from env at boot. `JWT_SECRET` is required and the
+  service refuses to start without it outside tests. Secrets are never
   logged.
 - **PII minimization.** Only opaque IDs are persisted or logged; names and
   contact details are never stored by this service.
@@ -283,7 +284,7 @@ What is implemented today:
 
 What is deferred (§10): structured JSON logs, an HCM-ping readiness check,
 request-id middleware, and Prometheus-style counters
-(`requests_created_total`, `hcm_calls_total`, etc.).  None of these add
+(`requests_created_total`, `hcm_calls_total`, etc.). None of these add
 value until the service is deployed somewhere that scrapes them; they are
 trivial to add when that time comes.
 
@@ -441,6 +442,7 @@ CREATE TABLE audit_events (
 ```
 
 Invariants enforced by the state machine module:
+
 - Only listed transitions allowed; everything else throws.
 - On entry into `CANCELLED | REJECTED | HCM_FAILED`, the reservation is
   released (`state = RELEASED`).
@@ -453,9 +455,9 @@ Three inputs feed `BalancesService.applyHcmBalanceSnapshot()` (see §C3 for
 the full rationale, this section lists the mechanics only):
 
 - **Inbound batch (`POST /hcm/webhooks/batch`).** Full or partial corpus.
-  Each row: `{ employeeId, locationId, leaveType, balance, asOf }`.  Each
+  Each row: `{ employeeId, locationId, leaveType, balance, asOf }`. Each
   row is applied in its own transaction so a bad row can't poison the
-  batch.  When the new HCM balance is below open reservations we tag the
+  batch. When the new HCM balance is below open reservations we tag the
   audit event `BALANCE_SNAPSHOT_NEGATIVE_DRIFT` and move affected
   `APPROVED` requests to `REVIEW_REQUIRED`.
 - **Inbound single-key (`POST /hcm/webhooks/balance`).** Same handler
@@ -479,43 +481,43 @@ webhooks (which are signed).
 
 ### 6.1 Employee-facing
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/me/balances` | Effective balances for the authenticated employee. |
-| POST | `/me/requests` | File a new request. |
-| GET | `/me/requests` | List own requests. |
-| GET | `/me/requests/:id` | Detail. |
-| POST | `/me/requests/:id/cancel` | Cancel own pending/approved request. |
+| Method | Path                      | Description                                        |
+| ------ | ------------------------- | -------------------------------------------------- |
+| GET    | `/me/balances`            | Effective balances for the authenticated employee. |
+| POST   | `/me/requests`            | File a new request.                                |
+| GET    | `/me/requests`            | List own requests.                                 |
+| GET    | `/me/requests/:id`        | Detail.                                            |
+| POST   | `/me/requests/:id/cancel` | Cancel own pending/approved request.               |
 
 ### 6.2 Manager-facing
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/manager/requests` | Requests pending my approval. |
-| POST | `/manager/requests/:id/approve` | Approve. |
-| POST | `/manager/requests/:id/reject` | Reject with reason. |
+| Method | Path                            | Description                   |
+| ------ | ------------------------------- | ----------------------------- |
+| GET    | `/manager/requests`             | Requests pending my approval. |
+| POST   | `/manager/requests/:id/approve` | Approve.                      |
+| POST   | `/manager/requests/:id/reject`  | Reject with reason.           |
 
 ### 6.3 Admin / Ops
 
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | `/admin/reconcile` | Trigger reconciliation for a key or set. |
-| GET | `/admin/outbox` | Outbox inspection. |
-| POST | `/admin/outbox/:id/retry` | Force-retry a dead / stalled outbox entry. |
-| POST | `/admin/outbox/drain` | Drain one outbox tick on demand. |
+| Method | Path                      | Description                                |
+| ------ | ------------------------- | ------------------------------------------ |
+| POST   | `/admin/reconcile`        | Trigger reconciliation for a key or set.   |
+| GET    | `/admin/outbox`           | Outbox inspection.                         |
+| POST   | `/admin/outbox/:id/retry` | Force-retry a dead / stalled outbox entry. |
+| POST   | `/admin/outbox/drain`     | Drain one outbox tick on demand.           |
 
 ### 6.4 HCM inbound (signed, not JWT)
 
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | `/hcm/webhooks/batch` | Full/partial balance corpus. |
-| POST | `/hcm/webhooks/balance` | Single-key update. |
+| Method | Path                    | Description                  |
+| ------ | ----------------------- | ---------------------------- |
+| POST   | `/hcm/webhooks/batch`   | Full/partial balance corpus. |
+| POST   | `/hcm/webhooks/balance` | Single-key update.           |
 
 ### 6.5 Health
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/health` | Liveness + readiness. |
+| Method | Path      | Description           |
+| ------ | --------- | --------------------- |
+| GET    | `/health` | Liveness + readiness. |
 
 ### 6.6 Sample contracts
 
@@ -562,22 +564,22 @@ X-Hcm-Signature: sha256=...
 
 ## 7. Alternatives Considered (summary)
 
-| Decision | Chosen | Alternatives | Why |
-|----------|--------|--------------|-----|
-| Source of truth | HCM, locally cached | Local authoritative | PDF mandates HCM; otherwise drift on anniversaries. |
-| Concurrency | Pessimistic `BEGIN IMMEDIATE` | OCC with `version` | SQLite is single-writer; simpler; no retry loop. |
-| HCM side effect | Outbox + worker | Inline call | Inline pins latency to HCM and is not crash-safe. |
-| Drift detection | Push (batch webhook) + JIT (pre-consume check) + on-demand pull | Pull only / Push only | Layered defense for a lying HCM.  Scheduled pull deferred until real traffic demands it. |
-| Idempotency | Key+endpoint+actor in SQL | Redis | No extra infra; SQLite is fine at expected QPS. |
-| ORM | `better-sqlite3` direct + repository pattern | TypeORM / Prisma | Synchronous API matches SQLite; transactional control is explicit; smaller surface. |
-| Auth | JWT HS256 today (exercise); RS256 + JWKS in prod | Session | Stateless, already used across ExampleHR. |
+| Decision        | Chosen                                                          | Alternatives          | Why                                                                                     |
+| --------------- | --------------------------------------------------------------- | --------------------- | --------------------------------------------------------------------------------------- |
+| Source of truth | HCM, locally cached                                             | Local authoritative   | PDF mandates HCM; otherwise drift on anniversaries.                                     |
+| Concurrency     | Pessimistic `BEGIN IMMEDIATE`                                   | OCC with `version`    | SQLite is single-writer; simpler; no retry loop.                                        |
+| HCM side effect | Outbox + worker                                                 | Inline call           | Inline pins latency to HCM and is not crash-safe.                                       |
+| Drift detection | Push (batch webhook) + JIT (pre-consume check) + on-demand pull | Pull only / Push only | Layered defense for a lying HCM. Scheduled pull deferred until real traffic demands it. |
+| Idempotency     | Key+endpoint+actor in SQL                                       | Redis                 | No extra infra; SQLite is fine at expected QPS.                                         |
+| ORM             | `better-sqlite3` direct + repository pattern                    | TypeORM / Prisma      | Synchronous API matches SQLite; transactional control is explicit; smaller surface.     |
+| Auth            | JWT HS256 today (exercise); RS256 + JWKS in prod                | Session               | Stateless, already used across ExampleHR.                                               |
 
 ## 8. Deployment & Config
 
-- Twelve-factor.  All config via env; see `.env.example`.
+- Twelve-factor. All config via env; see `.env.example`.
 - Single process is sufficient at the exercise's scale: SQLite serialises
   all writes, in-process scheduling drains the outbox, and in-process
-  state powers idempotency.  Horizontal scale is an explicit §10 item
+  state powers idempotency. Horizontal scale is an explicit §10 item
   (Postgres + Redis + a real message queue).
 
 ## 9. Testing Strategy
@@ -603,8 +605,7 @@ three tiers:
   no-op on missing key.
 - `audit.service.spec` — row shape, null defaults, `String(targetId)`.
 - `jwt.service.spec` — round-trip, expired, tampered.
-- `hcm-client.spec` — 5xx→transient, 4xx→permanent, network failure,
-  429.
+- `hcm-client.spec` — 5xx→transient, 4xx→permanent, network failure, 429.
 - `outbox-backoff.spec` — `computeBackoffMs` is monotonic on average,
   capped and never negative.
 - `health.controller.spec` — healthy / degraded / DB-throws branches.
@@ -640,7 +641,7 @@ three tiers:
 ### 9.4 Coverage target
 
 - Jest thresholds enforce **≥ 90 %** on statements, lines, and functions
-  and **≥ 80 %** on branches across `src/`.  Current run: 93 % stmts /
+  and **≥ 80 %** on branches across `src/`. Current run: 93 % stmts /
   80 %+ branches / 96 % funcs / 95 % lines.
 - Coverage HTML + lcov reports are emitted to `coverage/`.
 

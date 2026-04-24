@@ -16,12 +16,14 @@ export class AuditService {
   }
 
   logInTx(db, entry) {
-    db.prepare(`
+    db.prepare(
+      `
       INSERT INTO audit_events
         (actor_id, actor_type, action, target_type, target_id,
          before_json, after_json, correlation_id, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
+    `,
+    ).run(
       entry.actorId ?? null,
       entry.actorType ?? 'SYSTEM',
       entry.action,

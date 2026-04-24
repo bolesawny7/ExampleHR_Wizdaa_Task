@@ -3,7 +3,8 @@ import { ConfigService } from '../../src/config/config.service.js';
 
 describe('JwtService', () => {
   const config = new ConfigService({
-    JWT_SECRET: 'x'.repeat(32), NODE_ENV: 'test',
+    JWT_SECRET: 'x'.repeat(32),
+    NODE_ENV: 'test',
   });
   const svc = new JwtService(config);
 

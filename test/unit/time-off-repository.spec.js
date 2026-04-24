@@ -1,4 +1,4 @@
-import { TestClock } from '../../src/common/clock.js';
+import { TestClock } from '../helpers/test-clock.js';
 import { ConfigService } from '../../src/config/config.service.js';
 import { DatabaseService } from '../../src/database/database.service.js';
 import { NotFoundError } from '../../src/common/errors.js';
@@ -9,9 +9,13 @@ describe('TimeOffRepository', () => {
 
   beforeEach(() => {
     clock = new TestClock();
-    db = new DatabaseService(new ConfigService({
-      NODE_ENV: 'test', JWT_SECRET: 'x', DATABASE_PATH: ':memory:',
-    }));
+    db = new DatabaseService(
+      new ConfigService({
+        NODE_ENV: 'test',
+        JWT_SECRET: 'x',
+        DATABASE_PATH: ':memory:',
+      }),
+    );
     db.open();
     repo = new TimeOffRepository(db);
   });
@@ -71,10 +75,11 @@ describe('TimeOffRepository', () => {
 
   test('updateState applies when fromState matches and persists patch fields', () => {
     repo.insert(db.db, row('r_1'));
-    const ok = repo.updateState(
-      db.db, 'r_1', 'PENDING', 'APPROVED', clock.now(),
-      { approverId: 'M-1', approvedAt: clock.now(), externalRequestId: 'ext_x' },
-    );
+    const ok = repo.updateState(db.db, 'r_1', 'PENDING', 'APPROVED', clock.now(), {
+      approverId: 'M-1',
+      approvedAt: clock.now(),
+      externalRequestId: 'ext_x',
+    });
     expect(ok).toBe(true);
     const r = repo.findByIdOrThrow('r_1');
     expect(r.state).toBe('APPROVED');

@@ -22,7 +22,8 @@ export class TimeOffRepository {
   }
 
   insert(db, row) {
-    db.prepare(`
+    db.prepare(
+      `
       INSERT INTO requests
         (id, employee_id, manager_id, location_id, leave_type,
          start_date, end_date, days, reason, state,
@@ -31,7 +32,8 @@ export class TimeOffRepository {
         (@id, @employeeId, @managerId, @locationId, @leaveType,
          @startDate, @endDate, @days, @reason, @state,
          @createdAt, @updatedAt, @correlationId, @externalRequestId)
-    `).run(row);
+    `,
+    ).run(row);
     return row;
   }
 
@@ -42,18 +44,26 @@ export class TimeOffRepository {
   }
 
   listForEmployee(employeeId, db = this.db) {
-    return db.prepare(`
+    return db
+      .prepare(
+        `
       SELECT ${COLUMNS} FROM requests
        WHERE employee_id = ? ORDER BY created_at DESC
-    `).all(employeeId);
+    `,
+      )
+      .all(employeeId);
   }
 
   listPendingForManager(managerId, db = this.db) {
-    return db.prepare(`
+    return db
+      .prepare(
+        `
       SELECT ${COLUMNS} FROM requests
        WHERE manager_id = ? AND state = 'PENDING'
        ORDER BY created_at ASC
-    `).all(managerId);
+    `,
+      )
+      .all(managerId);
   }
 
   /**
@@ -63,15 +73,22 @@ export class TimeOffRepository {
    * need the rest.
    */
   listApprovedIdsForKey(employeeId, locationId, leaveType, db = this.db) {
-    return db.prepare(`
+    return db
+      .prepare(
+        `
       SELECT id FROM requests
        WHERE employee_id = ? AND location_id = ? AND leave_type = ?
              AND state = 'APPROVED'
-    `).all(employeeId, locationId, leaveType).map((r) => r.id);
+    `,
+      )
+      .all(employeeId, locationId, leaveType)
+      .map((r) => r.id);
   }
 
   updateState(db, id, fromState, toState, now, patch = {}) {
-    const res = db.prepare(`
+    const res = db
+      .prepare(
+        `
       UPDATE requests
          SET state = ?,
              updated_at = ?,
@@ -80,14 +97,18 @@ export class TimeOffRepository {
              external_request_id = COALESCE(?, external_request_id),
              hcm_error = COALESCE(?, hcm_error)
        WHERE id = ? AND state = ?
-    `).run(
-      toState, now,
-      patch.approverId ?? null,
-      patch.approvedAt ?? null,
-      patch.externalRequestId ?? null,
-      patch.hcmError ?? null,
-      id, fromState,
-    );
+    `,
+      )
+      .run(
+        toState,
+        now,
+        patch.approverId ?? null,
+        patch.approvedAt ?? null,
+        patch.externalRequestId ?? null,
+        patch.hcmError ?? null,
+        id,
+        fromState,
+      );
     return res.changes === 1;
   }
 }

@@ -19,9 +19,8 @@ export class HcmSignatureGuard {
     const req = context.switchToHttp().getRequest();
     const timestamp = req.headers['x-hcm-timestamp'];
     const signature = req.headers['x-hcm-signature'];
-    const rawBody = req.rawBody instanceof Buffer
-      ? req.rawBody.toString('utf8')
-      : JSON.stringify(req.body ?? {});
+    const rawBody =
+      req.rawBody instanceof Buffer ? req.rawBody.toString('utf8') : JSON.stringify(req.body ?? {});
     const ok = verifySignature({
       secret: this._secret,
       timestampMs: timestamp,

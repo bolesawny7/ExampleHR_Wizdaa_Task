@@ -12,11 +12,15 @@ async function bootstrap() {
   const config = app.get(ConfigService);
 
   app.use(helmet());
-  app.use(express.json({
-    // Preserve raw body bytes for HMAC signature verification on HCM webhooks.
-    verify: (req, _res, buf) => { req.rawBody = buf; },
-    limit: '2mb',
-  }));
+  app.use(
+    express.json({
+      // Preserve raw body bytes for HMAC signature verification on HCM webhooks.
+      verify: (req, _res, buf) => {
+        req.rawBody = buf;
+      },
+      limit: '2mb',
+    }),
+  );
   app.useGlobalPipes(buildValidationPipe());
 
   await app.listen(config.port);

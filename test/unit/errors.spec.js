@@ -1,15 +1,26 @@
 import {
-  DomainError, BalanceNotFoundError, ForbiddenDomainError,
-  HcmPermanentError, HcmTransientError, InsufficientBalanceError,
-  InvalidSignatureError, InvalidStateTransitionError, NotFoundError,
-  UnauthorizedError, ValidationError,
+  DomainError,
+  BalanceNotFoundError,
+  ForbiddenDomainError,
+  HcmPermanentError,
+  HcmTransientError,
+  InsufficientBalanceError,
+  InvalidSignatureError,
+  InvalidStateTransitionError,
+  NotFoundError,
+  UnauthorizedError,
+  ValidationError,
 } from '../../src/common/errors.js';
 
 describe('errors', () => {
   test('DomainError carries code, status, and extras', () => {
     const err = new DomainError(418, 'TEAPOT', 'I am a teapot', { brew: 'pu-erh' });
     expect(err.getStatus()).toBe(418);
-    expect(err.getResponse()).toEqual({ error: 'TEAPOT', message: 'I am a teapot', brew: 'pu-erh' });
+    expect(err.getResponse()).toEqual({
+      error: 'TEAPOT',
+      message: 'I am a teapot',
+      brew: 'pu-erh',
+    });
     expect(err.code).toBe('TEAPOT');
   });
 

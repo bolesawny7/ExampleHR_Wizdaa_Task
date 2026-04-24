@@ -12,8 +12,8 @@ export class HealthController {
   @Get()
   check() {
     try {
-      const row = this._db.db.prepare('SELECT 1 AS ok').get();
-      return { status: row?.ok === 1 ? 'ok' : 'degraded', db: 'ok' };
+      this._db.db.prepare('SELECT 1').get();
+      return { status: 'ok', db: 'ok' };
     } catch (err) {
       return { status: 'degraded', db: 'down', error: err.message };
     }

@@ -8,11 +8,16 @@ describe('Admin API (e2e)', () => {
     harness = await buildTestApp();
     server = harness.app.getHttpServer();
     harness.seedBalance({
-      employeeId: 'E-1', locationId: 'L-1', leaveType: 'ANNUAL', balance: 10,
+      employeeId: 'E-1',
+      locationId: 'L-1',
+      leaveType: 'ANNUAL',
+      balance: 10,
     });
   });
 
-  afterEach(async () => { await harness.close(); });
+  afterEach(async () => {
+    await harness.close();
+  });
 
   test('non-admin cannot call /admin/reconcile', async () => {
     const res = await request(server)
@@ -85,12 +90,12 @@ describe('Admin API (e2e)', () => {
       .post('/me/requests')
       .set('Authorization', `Bearer ${token}`)
       .send({
-        locationId: 'L-1', leaveType: 'ANNUAL',
-        startDate: '2026-05-04', endDate: '2026-05-05',
+        locationId: 'L-1',
+        leaveType: 'ANNUAL',
+        startDate: '2026-05-04',
+        endDate: '2026-05-05',
       });
-    const list = await request(server)
-      .get('/me/requests')
-      .set('Authorization', `Bearer ${token}`);
+    const list = await request(server).get('/me/requests').set('Authorization', `Bearer ${token}`);
     expect(list.status).toBe(200);
     expect(list.body.length).toBe(1);
 
@@ -103,13 +108,12 @@ describe('Admin API (e2e)', () => {
 
   test('manager can list pending requests for them', async () => {
     const eTok = harness.tokens.employee('E-1', { managerId: 'M-1' });
-    await request(server)
-      .post('/me/requests')
-      .set('Authorization', `Bearer ${eTok}`)
-      .send({
-        locationId: 'L-1', leaveType: 'ANNUAL',
-        startDate: '2026-05-04', endDate: '2026-05-05',
-      });
+    await request(server).post('/me/requests').set('Authorization', `Bearer ${eTok}`).send({
+      locationId: 'L-1',
+      leaveType: 'ANNUAL',
+      startDate: '2026-05-04',
+      endDate: '2026-05-05',
+    });
     const list = await request(server)
       .get('/manager/requests')
       .set('Authorization', `Bearer ${harness.tokens.manager('M-1')}`);
@@ -123,8 +127,10 @@ describe('Admin API (e2e)', () => {
       .post('/me/requests')
       .set('Authorization', `Bearer ${eTok}`)
       .send({
-        locationId: 'L-1', leaveType: 'ANNUAL',
-        startDate: '2026-05-04', endDate: '2026-05-05',
+        locationId: 'L-1',
+        leaveType: 'ANNUAL',
+        startDate: '2026-05-04',
+        endDate: '2026-05-05',
       });
     const rej = await request(server)
       .post(`/manager/requests/${r.body.id}/reject`)

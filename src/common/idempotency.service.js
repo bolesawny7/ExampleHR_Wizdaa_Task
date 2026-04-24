@@ -24,16 +24,24 @@ export class IdempotencyService {
 
   lookup(key, endpoint, actorId) {
     if (!key) return null;
-    const row = this._db.prepare(`
+    const row = this._db
+      .prepare(
+        `
       SELECT status_code, response, expires_at
         FROM idempotency_keys
        WHERE key = ? AND endpoint = ? AND actor_id = ?
-    `).get(key, endpoint, actorId);
+    `,
+      )
+      .get(key, endpoint, actorId);
     if (!row) return null;
     if (row.expires_at < this._clock.now()) {
-      this._db.prepare(`
+      this._db
+        .prepare(
+          `
         DELETE FROM idempotency_keys WHERE key = ? AND endpoint = ? AND actor_id = ?
-      `).run(key, endpoint, actorId);
+      `,
+        )
+        .run(key, endpoint, actorId);
       return null;
     }
     return {
@@ -45,13 +53,14 @@ export class IdempotencyService {
   store(key, endpoint, actorId, statusCode, response) {
     if (!key) return;
     const now = this._clock.now();
-    this._db.prepare(`
+    this._db
+      .prepare(
+        `
       INSERT OR REPLACE INTO idempotency_keys
         (key, endpoint, actor_id, status_code, response, created_at, expires_at)
       VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      key, endpoint, actorId, statusCode,
-      JSON.stringify(response), now, now + TTL_MS,
-    );
+    `,
+      )
+      .run(key, endpoint, actorId, statusCode, JSON.stringify(response), now, now + TTL_MS);
   }
 }

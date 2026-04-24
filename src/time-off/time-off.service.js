@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import {
-  BalanceNotFoundError, ConflictError, ForbiddenDomainError,
+  BalanceNotFoundError,
+  ConflictError,
+  ForbiddenDomainError,
   InsufficientBalanceError,
 } from '../common/errors.js';
 import { newCorrelationId, newExternalRequestId, newRequestId } from '../common/ids.js';
@@ -38,9 +40,7 @@ export class TimeOffService {
     const now = this._clock.now();
 
     const tx = this._dbService.transaction((db) => {
-      const bal = this._balancesRepo.findBalance(
-        actor.sub, input.locationId, input.leaveType, db,
-      );
+      const bal = this._balancesRepo.findBalance(actor.sub, input.locationId, input.leaveType, db);
       if (!bal) {
         throw new BalanceNotFoundError({
           employeeId: actor.sub,
@@ -49,7 +49,10 @@ export class TimeOffService {
         });
       }
       const reserved = this._balancesRepo.sumOpenReservations(
-        actor.sub, input.locationId, input.leaveType, db,
+        actor.sub,
+        input.locationId,
+        input.leaveType,
+        db,
       );
       const effective = round(bal.hcmBalance - reserved);
       if (effective < days) {
@@ -73,13 +76,17 @@ export class TimeOffService {
         externalRequestId: null,
       };
       this._repo.insert(db, row);
-      this._balancesRepo.insertReservation(db, {
-        requestId: id,
-        employeeId: actor.sub,
-        locationId: input.locationId,
-        leaveType: input.leaveType,
-        days,
-      }, now);
+      this._balancesRepo.insertReservation(
+        db,
+        {
+          requestId: id,
+          employeeId: actor.sub,
+          locationId: input.locationId,
+          leaveType: input.leaveType,
+          days,
+        },
+        now,
+      );
 
       this._audit.logInTx(db, {
         actorId: actor.sub,
@@ -112,13 +119,16 @@ export class TimeOffService {
       assertTransition(before.state, STATES.APPROVED);
 
       const externalRequestId = before.externalRequestId ?? newExternalRequestId();
-      const ok = this._repo.updateState(
-        db, requestId, before.state, STATES.APPROVED, now,
-        { approverId: actor.sub, approvedAt: now, externalRequestId },
-      );
+      const ok = this._repo.updateState(db, requestId, before.state, STATES.APPROVED, now, {
+        approverId: actor.sub,
+        approvedAt: now,
+        externalRequestId,
+      });
       if (!ok) {
-        throw new ConflictError('CONCURRENT_UPDATE',
-          'Request state changed concurrently; please retry.');
+        throw new ConflictError(
+          'CONCURRENT_UPDATE',
+          'Request state changed concurrently; please retry.',
+        );
       }
 
       this._outbox.enqueue(db, {
@@ -144,7 +154,8 @@ export class TimeOffService {
         action: 'REQUEST_APPROVED',
         targetType: 'REQUEST',
         targetId: requestId,
-        before, after,
+        before,
+        after,
         correlationId: before.correlationId,
       });
       return after;
@@ -159,13 +170,15 @@ export class TimeOffService {
       this._authorizeManager(actor, before);
       assertTransition(before.state, STATES.REJECTED);
 
-      const ok = this._repo.updateState(
-        db, requestId, before.state, STATES.REJECTED, now,
-        { approverId: actor.sub, hcmError: reason },
-      );
+      const ok = this._repo.updateState(db, requestId, before.state, STATES.REJECTED, now, {
+        approverId: actor.sub,
+        hcmError: reason,
+      });
       if (!ok) {
-        throw new ConflictError('CONCURRENT_UPDATE',
-          'Request state changed concurrently; please retry.');
+        throw new ConflictError(
+          'CONCURRENT_UPDATE',
+          'Request state changed concurrently; please retry.',
+        );
       }
 
       this._balancesRepo.releaseReservation(db, requestId, now);
@@ -177,7 +190,8 @@ export class TimeOffService {
         action: 'REQUEST_REJECTED',
         targetType: 'REQUEST',
         targetId: requestId,
-        before, after,
+        before,
+        after,
         correlationId: before.correlationId,
       });
       return after;
@@ -193,7 +207,7 @@ export class TimeOffService {
       const isOwner = before.employeeId === actor.sub;
       const isAdmin = actor.roles?.includes('admin');
       if (!isOwner && !isAdmin) {
-        throw new ForbiddenDomainError('Cannot cancel another employee\'s request');
+        throw new ForbiddenDomainError("Cannot cancel another employee's request");
       }
       // Throws if not a legal transition.  CONSUMED requests cannot be
       // cancelled because the balance is already gone from HCM — a separate
@@ -209,7 +223,8 @@ export class TimeOffService {
         action: 'REQUEST_CANCELLED',
         targetType: 'REQUEST',
         targetId: requestId,
-        before, after,
+        before,
+        after,
         correlationId: before.correlationId,
       });
       return after;
@@ -236,7 +251,8 @@ export class TimeOffService {
         action: 'REQUEST_CONSUMED',
         targetType: 'REQUEST',
         targetId: requestId,
-        before, after,
+        before,
+        after,
         correlationId: before.correlationId,
       });
       return after;
@@ -255,10 +271,9 @@ export class TimeOffService {
       const before = this._repo.findByIdOrThrow(requestId, db);
       if (before.state === STATES.HCM_FAILED) return before;
       assertTransition(before.state, STATES.HCM_FAILED);
-      this._repo.updateState(
-        db, requestId, before.state, STATES.HCM_FAILED, now,
-        { hcmError: errorMessage },
-      );
+      this._repo.updateState(db, requestId, before.state, STATES.HCM_FAILED, now, {
+        hcmError: errorMessage,
+      });
       this._balancesRepo.releaseReservation(db, requestId, now);
       const after = this._repo.findByIdOrThrow(requestId, db);
       this._audit.logInTx(db, {
@@ -266,7 +281,8 @@ export class TimeOffService {
         action: 'REQUEST_HCM_FAILED',
         targetType: 'REQUEST',
         targetId: requestId,
-        before, after,
+        before,
+        after,
         correlationId: before.correlationId,
       });
       return after;
@@ -284,17 +300,17 @@ export class TimeOffService {
       const before = this._repo.findByIdOrThrow(requestId, db);
       if (before.state === STATES.REVIEW_REQUIRED) return before;
       assertTransition(before.state, STATES.REVIEW_REQUIRED);
-      this._repo.updateState(
-        db, requestId, before.state, STATES.REVIEW_REQUIRED, now,
-        { hcmError: reason },
-      );
+      this._repo.updateState(db, requestId, before.state, STATES.REVIEW_REQUIRED, now, {
+        hcmError: reason,
+      });
       const after = this._repo.findByIdOrThrow(requestId, db);
       this._audit.logInTx(db, {
         actorType: 'SYSTEM',
         action: 'REQUEST_REVIEW_REQUIRED',
         targetType: 'REQUEST',
         targetId: requestId,
-        before, after,
+        before,
+        after,
         correlationId: before.correlationId,
       });
       return after;
@@ -302,9 +318,15 @@ export class TimeOffService {
     return tx();
   }
 
-  listForEmployee(employeeId) { return this._repo.listForEmployee(employeeId); }
-  listForManager(managerId) { return this._repo.listPendingForManager(managerId); }
-  getById(id) { return this._repo.findByIdOrThrow(id); }
+  listForEmployee(employeeId) {
+    return this._repo.listForEmployee(employeeId);
+  }
+  listForManager(managerId) {
+    return this._repo.listPendingForManager(managerId);
+  }
+  getById(id) {
+    return this._repo.findByIdOrThrow(id);
+  }
 
   _authorizeManager(actor, request) {
     const isAdmin = actor.roles?.includes('admin');
@@ -313,9 +335,11 @@ export class TimeOffService {
       throw new ForbiddenDomainError('Requires manager role');
     }
     if (request.managerId && request.managerId !== actor.sub) {
-      throw new ForbiddenDomainError('Not this employee\'s manager');
+      throw new ForbiddenDomainError("Not this employee's manager");
     }
   }
 }
 
-function round(n) { return Math.round(n * 100) / 100; }
+function round(n) {
+  return Math.round(n * 100) / 100;
+}

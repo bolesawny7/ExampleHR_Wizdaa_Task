@@ -2,7 +2,8 @@ import { Test } from '@nestjs/testing';
 import express from 'express';
 import { AppModule } from '../../src/app.module.js';
 import { JwtService } from '../../src/auth/jwt.service.js';
-import { Clock, TestClock } from '../../src/common/clock.js';
+import { Clock } from '../../src/common/clock.js';
+import { TestClock } from './test-clock.js';
 import { buildValidationPipe } from '../../src/common/validation.js';
 import { ConfigService } from '../../src/config/config.service.js';
 import { DatabaseService } from '../../src/database/database.service.js';
@@ -26,26 +27,32 @@ export async function buildTestApp(overrides = {}) {
     imports: [AppModule],
   })
     .overrideProvider(ConfigService)
-    .useValue(new ConfigService({
-      // NODE_ENV=test already disables background jobs by default
-      // (see ConfigService).
-      NODE_ENV: 'test',
-      JWT_SECRET: 'test-secret',
-      DATABASE_PATH: ':memory:',
-      HCM_BASE_URL: 'http://mock',
-      HCM_WEBHOOK_SECRET: 'test-webhook-secret',
-      HCM_API_KEY: 'test-api-key',
-      OUTBOX_MAX_ATTEMPTS: '4',
-      ...overrides,
-    }))
+    .useValue(
+      new ConfigService({
+        // NODE_ENV=test already disables background jobs by default
+        // (see ConfigService).
+        NODE_ENV: 'test',
+        JWT_SECRET: 'test-secret',
+        DATABASE_PATH: ':memory:',
+        HCM_BASE_URL: 'http://mock',
+        HCM_WEBHOOK_SECRET: 'test-webhook-secret',
+        HCM_API_KEY: 'test-api-key',
+        OUTBOX_MAX_ATTEMPTS: '4',
+        ...overrides,
+      }),
+    )
     .overrideProvider(Clock)
     .useValue(clock)
     .compile();
 
   const app = moduleRef.createNestApplication({ bodyParser: false, logger: false });
-  app.use(express.json({
-    verify: (req, _res, buf) => { req.rawBody = buf; },
-  }));
+  app.use(
+    express.json({
+      verify: (req, _res, buf) => {
+        req.rawBody = buf;
+      },
+    }),
+  );
   app.useGlobalPipes(buildValidationPipe());
   await app.init();
 
@@ -59,8 +66,7 @@ export async function buildTestApp(overrides = {}) {
       jwt.sign({ sub, roles: ['employee'], orgId: 'org-1', ...extra }),
     manager: (sub = 'M-1', extra = {}) =>
       jwt.sign({ sub, roles: ['employee', 'manager'], orgId: 'org-1', ...extra }),
-    admin: (sub = 'A-1') =>
-      jwt.sign({ sub, roles: ['admin'], orgId: 'org-1' }),
+    admin: (sub = 'A-1') => jwt.sign({ sub, roles: ['admin'], orgId: 'org-1' }),
   };
 
   const db = app.get(DatabaseService);
@@ -74,13 +80,16 @@ export async function buildTestApp(overrides = {}) {
     db,
     /** Seed a balance row directly in the DB for tests. */
     seedBalance({ employeeId, locationId, leaveType, balance, asOf }) {
-      db.db.prepare(`
+      db.db
+        .prepare(
+          `
         INSERT INTO balances
           (employee_id, location_id, leave_type, hcm_balance, hcm_snapshot_at,
            updated_at, version)
         VALUES (?, ?, ?, ?, ?, ?, 1)
-      `).run(employeeId, locationId, leaveType, balance,
-             asOf ?? clock.now(), clock.now());
+      `,
+        )
+        .run(employeeId, locationId, leaveType, balance, asOf ?? clock.now(), clock.now());
       hcmState.setBalance(employeeId, locationId, leaveType, balance, asOf ?? clock.now());
     },
     async close() {

@@ -1,12 +1,9 @@
 import { Body, Controller, HttpCode, Inject, Post, UseGuards } from '@nestjs/common';
 import { Public } from '../auth/auth.guard.js';
-import { buildValidationPipe } from '../common/validation.js';
+import { Validate } from '../common/validation.js';
 import { HcmBalanceDto, HcmBatchDto } from './dto/hcm-webhook.dto.js';
 import { ReconciliationService } from './reconciliation.service.js';
 import { HcmSignatureGuard } from './signature.guard.js';
-
-const validateBatch = buildValidationPipe({ expectedType: HcmBatchDto });
-const validateBalance = buildValidationPipe({ expectedType: HcmBalanceDto });
 
 /**
  * Inbound HCM webhook routes.
@@ -26,7 +23,7 @@ export class HcmWebhookController {
 
   @Post('/batch')
   @HttpCode(200)
-  handleBatch(@Body(validateBatch) body) {
+  handleBatch(@Body(Validate(HcmBatchDto)) body) {
     return this._reconciliation.handleBatch({
       batchId: body.batchId ?? null,
       asOf: body.asOf ? Date.parse(body.asOf) : undefined,
@@ -36,7 +33,7 @@ export class HcmWebhookController {
 
   @Post('/balance')
   @HttpCode(200)
-  handleSingle(@Body(validateBalance) body) {
+  handleSingle(@Body(Validate(HcmBalanceDto)) body) {
     const asOf = body.asOf ? Date.parse(body.asOf) : undefined;
     return this._reconciliation.handleBatch({
       batchId: null,

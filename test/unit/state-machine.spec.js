@@ -1,6 +1,4 @@
-import {
-  STATES, assertTransition, canTransition,
-} from '../../src/time-off/state-machine.js';
+import { STATES, assertTransition, canTransition } from '../../src/time-off/state-machine.js';
 
 describe('state-machine', () => {
   const allStates = Object.values(STATES);
@@ -28,8 +26,7 @@ describe('state-machine', () => {
   });
 
   test('assertTransition throws on denied transitions', () => {
-    expect(() => assertTransition(STATES.PENDING, STATES.CONSUMED))
-      .toThrow(/Cannot transition/);
+    expect(() => assertTransition(STATES.PENDING, STATES.CONSUMED)).toThrow(/Cannot transition/);
   });
 
   test('assertTransition is a no-op on allowed transitions', () => {

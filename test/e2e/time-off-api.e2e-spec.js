@@ -10,11 +10,16 @@ describe('Time-Off HTTP API (e2e)', () => {
     server = harness.app.getHttpServer();
     worker = harness.app.get(HcmOutboxWorker);
     harness.seedBalance({
-      employeeId: 'E-1', locationId: 'L-1', leaveType: 'ANNUAL', balance: 10,
+      employeeId: 'E-1',
+      locationId: 'L-1',
+      leaveType: 'ANNUAL',
+      balance: 10,
     });
   });
 
-  afterEach(async () => { await harness.close(); });
+  afterEach(async () => {
+    await harness.close();
+  });
 
   test('GET /health is public and returns ok', async () => {
     const res = await request(server).get('/health');
@@ -42,8 +47,10 @@ describe('Time-Off HTTP API (e2e)', () => {
       .post('/me/requests')
       .set('Authorization', `Bearer ${harness.tokens.employee('E-1', { managerId: 'M-1' })}`)
       .send({
-        locationId: 'L-1', leaveType: 'ANNUAL',
-        startDate: '2026-05-04', endDate: '2026-05-06',
+        locationId: 'L-1',
+        leaveType: 'ANNUAL',
+        startDate: '2026-05-04',
+        endDate: '2026-05-06',
       });
     expect(res.status).toBe(201);
     expect(res.body.state).toBe('PENDING');
@@ -55,8 +62,10 @@ describe('Time-Off HTTP API (e2e)', () => {
       .post('/me/requests')
       .set('Authorization', `Bearer ${harness.tokens.employee('E-1')}`)
       .send({
-        locationId: 'L-1', leaveType: 'ANNUAL',
-        startDate: '2026-05-01', endDate: '2026-05-20',
+        locationId: 'L-1',
+        leaveType: 'ANNUAL',
+        startDate: '2026-05-01',
+        endDate: '2026-05-20',
       });
     expect(res.status).toBe(409);
     expect(res.body.error).toBe('INSUFFICIENT_BALANCE');
@@ -65,8 +74,10 @@ describe('Time-Off HTTP API (e2e)', () => {
   test('Idempotency-Key returns same response on retry', async () => {
     const token = harness.tokens.employee('E-1', { managerId: 'M-1' });
     const payload = {
-      locationId: 'L-1', leaveType: 'ANNUAL',
-      startDate: '2026-05-04', endDate: '2026-05-06',
+      locationId: 'L-1',
+      leaveType: 'ANNUAL',
+      startDate: '2026-05-04',
+      endDate: '2026-05-06',
     };
     const r1 = await request(server)
       .post('/me/requests')
@@ -82,9 +93,9 @@ describe('Time-Off HTTP API (e2e)', () => {
     expect(r2.status).toBe(201);
     expect(r2.body.id).toBe(r1.body.id);
     // and only ONE reservation exists for E-1
-    const rows = harness.db.db.prepare(
-      "SELECT COUNT(*) AS c FROM reservations WHERE employee_id = 'E-1'",
-    ).get();
+    const rows = harness.db.db
+      .prepare("SELECT COUNT(*) AS c FROM reservations WHERE employee_id = 'E-1'")
+      .get();
     expect(rows.c).toBe(1);
   });
 
@@ -93,13 +104,18 @@ describe('Time-Off HTTP API (e2e)', () => {
       .post('/me/requests')
       .set('Authorization', `Bearer ${harness.tokens.employee('E-1', { managerId: 'M-1' })}`)
       .send({
-        locationId: 'L-1', leaveType: 'ANNUAL',
-        startDate: '2026-05-04', endDate: '2026-05-06',
+        locationId: 'L-1',
+        leaveType: 'ANNUAL',
+        startDate: '2026-05-04',
+        endDate: '2026-05-06',
       });
     const reqId = r.body.id;
 
     harness.seedBalance({
-      employeeId: 'E-2', locationId: 'L-1', leaveType: 'ANNUAL', balance: 1,
+      employeeId: 'E-2',
+      locationId: 'L-1',
+      leaveType: 'ANNUAL',
+      balance: 1,
     });
     const res = await request(server)
       .get(`/me/requests/${reqId}`)
@@ -112,8 +128,10 @@ describe('Time-Off HTTP API (e2e)', () => {
       .post('/me/requests')
       .set('Authorization', `Bearer ${harness.tokens.employee('E-1', { managerId: 'M-1' })}`)
       .send({
-        locationId: 'L-1', leaveType: 'ANNUAL',
-        startDate: '2026-05-04', endDate: '2026-05-06',
+        locationId: 'L-1',
+        leaveType: 'ANNUAL',
+        startDate: '2026-05-04',
+        endDate: '2026-05-06',
       });
     const reqId = r.body.id;
 
@@ -124,9 +142,9 @@ describe('Time-Off HTTP API (e2e)', () => {
     expect(approve.body.state).toBe('APPROVED');
 
     await worker.tick();
-    const consumeCalls = harness.hcmState.calls().filter(
-      (c) => c.method === 'POST' && c.path === '/api/v1/time-off',
-    );
+    const consumeCalls = harness.hcmState
+      .calls()
+      .filter((c) => c.method === 'POST' && c.path === '/api/v1/time-off');
     expect(consumeCalls).toHaveLength(1);
     expect(harness.hcmState.getBalance('E-1', 'L-1', 'ANNUAL').balance).toBe(7);
   });
@@ -136,8 +154,10 @@ describe('Time-Off HTTP API (e2e)', () => {
       .post('/me/requests')
       .set('Authorization', `Bearer ${harness.tokens.employee('E-1', { managerId: 'M-1' })}`)
       .send({
-        locationId: 'L-1', leaveType: 'ANNUAL',
-        startDate: '2026-05-04', endDate: '2026-05-06',
+        locationId: 'L-1',
+        leaveType: 'ANNUAL',
+        startDate: '2026-05-04',
+        endDate: '2026-05-06',
       });
     const reqId = r.body.id;
     const res = await request(server)
@@ -151,8 +171,10 @@ describe('Time-Off HTTP API (e2e)', () => {
       .post('/me/requests')
       .set('Authorization', `Bearer ${harness.tokens.employee('E-1', { managerId: 'M-1' })}`)
       .send({
-        locationId: 'L-1', leaveType: 'ANNUAL',
-        startDate: '2026-05-04', endDate: '2026-05-06',
+        locationId: 'L-1',
+        leaveType: 'ANNUAL',
+        startDate: '2026-05-04',
+        endDate: '2026-05-06',
       });
     const cancelled = await request(server)
       .post(`/me/requests/${r.body.id}/cancel`)
@@ -179,8 +201,10 @@ describe('Time-Off HTTP API (e2e)', () => {
       .post('/me/requests')
       .set('Authorization', `Bearer ${harness.tokens.employee('E-1', { managerId: 'M-1' })}`)
       .send({
-        locationId: 'L-1', leaveType: 'ANNUAL',
-        startDate: '2026-05-04', endDate: '2026-05-06',
+        locationId: 'L-1',
+        leaveType: 'ANNUAL',
+        startDate: '2026-05-04',
+        endDate: '2026-05-06',
         hackyExtra: 'please drop me',
       });
     expect(res.status).toBe(400);

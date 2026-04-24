@@ -1,24 +1,16 @@
-import {
-  Body, Controller, Get, Headers, HttpCode, Inject, Param, Post, Req,
-} from '@nestjs/common';
+import { Body, Controller, Get, Headers, HttpCode, Inject, Param, Post, Req } from '@nestjs/common';
 import { Roles } from '../auth/auth.guard.js';
 import { NotFoundError } from '../common/errors.js';
 import { IdempotencyService } from '../common/idempotency.service.js';
-import { buildValidationPipe } from '../common/validation.js';
+import { Validate } from '../common/validation.js';
 import { CreateRequestDto, RejectRequestDto } from './dto/create-request.dto.js';
 import { TimeOffService } from './time-off.service.js';
-
-const validateCreate = buildValidationPipe({ expectedType: CreateRequestDto });
-const validateReject = buildValidationPipe({ expectedType: RejectRequestDto });
 
 // JwtAuthGuard is registered globally (see AppModule); here we only need
 // @Roles() for role checks and let the service layer enforce ownership.
 @Controller()
 export class TimeOffController {
-  constructor(
-    @Inject(TimeOffService) timeOff,
-    @Inject(IdempotencyService) idempotency,
-  ) {
+  constructor(@Inject(TimeOffService) timeOff, @Inject(IdempotencyService) idempotency) {
     this._timeOff = timeOff;
     this._idem = idempotency;
   }
@@ -26,11 +18,7 @@ export class TimeOffController {
   @Post('/me/requests')
   @Roles('employee', 'manager', 'admin')
   @HttpCode(201)
-  create(
-    @Req() req,
-    @Body(validateCreate) body,
-    @Headers('idempotency-key') idemKey,
-  ) {
+  create(@Req() req, @Body(Validate(CreateRequestDto)) body, @Headers('idempotency-key') idemKey) {
     const ep = 'POST /me/requests';
     const cached = this._idem.lookup(idemKey, ep, req.user.sub);
     if (cached) return cached.response;
@@ -80,7 +68,7 @@ export class TimeOffController {
 
   @Post('/manager/requests/:id/reject')
   @Roles('manager', 'admin')
-  reject(@Req() req, @Param('id') id, @Body(validateReject) body) {
+  reject(@Req() req, @Param('id') id, @Body(Validate(RejectRequestDto)) body) {
     return this._timeOff.reject({
       actor: req.user,
       requestId: id,

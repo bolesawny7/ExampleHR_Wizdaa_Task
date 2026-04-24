@@ -19,13 +19,15 @@ import http from 'node:http';
 
 export class MockHcmState {
   constructor() {
-    this._balances = new Map();               // key -> { balance, asOf }
-    this._idempotency = new Map();            // externalRequestId -> 'CONSUMED'|'RELEASED'
+    this._balances = new Map(); // key -> { balance, asOf }
+    this._idempotency = new Map(); // externalRequestId -> 'CONSUMED'|'RELEASED'
     this._calls = [];
-    this._failurePlan = [];                   // FIFO per-op error plan
+    this._failurePlan = []; // FIFO per-op error plan
   }
 
-  _key(e, l, t) { return `${e}|${l}|${t}`; }
+  _key(e, l, t) {
+    return `${e}|${l}|${t}`;
+  }
 
   setBalance(employeeId, locationId, leaveType, balance, asOf = Date.now()) {
     this._balances.set(this._key(employeeId, locationId, leaveType), { balance, asOf });
@@ -76,7 +78,9 @@ export class MockHcmState {
     return { ok: true };
   }
 
-  calls() { return this._calls.slice(); }
+  calls() {
+    return this._calls.slice();
+  }
 
   /**
    * Returns a function with the same shape as `fetch` that dispatches to the
@@ -135,8 +139,12 @@ function makeResponse(status, body) {
   return {
     status,
     ok: status >= 200 && status < 300,
-    async text() { return text; },
-    async json() { return JSON.parse(text); },
+    async text() {
+      return text;
+    },
+    async json() {
+      return JSON.parse(text);
+    },
   };
 }
 
@@ -147,7 +155,9 @@ function makeResponse(status, body) {
 export function startHcmMockServer({ port = 0, state = new MockHcmState() } = {}) {
   const server = http.createServer((req, res) => {
     let body = '';
-    req.on('data', (chunk) => { body += chunk; });
+    req.on('data', (chunk) => {
+      body += chunk;
+    });
     req.on('end', () => {
       const parsedBody = body ? safeJson(body) : null;
       const u = new URL(req.url, 'http://localhost');
@@ -210,7 +220,11 @@ export function startHcmMockServer({ port = 0, state = new MockHcmState() } = {}
 }
 
 function safeJson(s) {
-  try { return JSON.parse(s); } catch { return null; }
+  try {
+    return JSON.parse(s);
+  } catch {
+    return null;
+  }
 }
 
 if (require.main === module) {

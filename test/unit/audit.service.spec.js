@@ -1,5 +1,5 @@
 import { AuditService } from '../../src/common/audit.service.js';
-import { TestClock } from '../../src/common/clock.js';
+import { TestClock } from '../helpers/test-clock.js';
 import { ConfigService } from '../../src/config/config.service.js';
 import { DatabaseService } from '../../src/database/database.service.js';
 
@@ -8,9 +8,13 @@ describe('AuditService', () => {
 
   beforeEach(() => {
     clock = new TestClock();
-    db = new DatabaseService(new ConfigService({
-      NODE_ENV: 'test', JWT_SECRET: 'x', DATABASE_PATH: ':memory:',
-    }));
+    db = new DatabaseService(
+      new ConfigService({
+        NODE_ENV: 'test',
+        JWT_SECRET: 'x',
+        DATABASE_PATH: ':memory:',
+      }),
+    );
     db.open();
     svc = new AuditService(clock);
   });
@@ -19,9 +23,13 @@ describe('AuditService', () => {
 
   test('logInTx writes a full row', () => {
     svc.logInTx(db.db, {
-      actorId: 'A', actorType: 'USER', action: 'TEST',
-      targetType: 'REQUEST', targetId: 'r_1',
-      before: { state: 'X' }, after: { state: 'Y' },
+      actorId: 'A',
+      actorType: 'USER',
+      action: 'TEST',
+      targetType: 'REQUEST',
+      targetId: 'r_1',
+      before: { state: 'X' },
+      after: { state: 'Y' },
       correlationId: 'c',
     });
     const rows = db.db.prepare('SELECT * FROM audit_events').all();

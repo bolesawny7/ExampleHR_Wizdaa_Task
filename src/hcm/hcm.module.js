@@ -38,12 +38,14 @@ import { HcmSignatureGuard } from './signature.guard.js';
     {
       provide: ReconciliationService,
       useFactory: (balancesService, balancesRepo, timeOffRepo, timeOff, hcm, clock) =>
-        new ReconciliationService(
-          balancesService, balancesRepo, timeOffRepo, timeOff, hcm, clock,
-        ),
+        new ReconciliationService(balancesService, balancesRepo, timeOffRepo, timeOff, hcm, clock),
       inject: [
-        BalancesService, BalancesRepository, TimeOffRepository,
-        TimeOffService, HcmClient, Clock,
+        BalancesService,
+        BalancesRepository,
+        TimeOffRepository,
+        TimeOffService,
+        HcmClient,
+        Clock,
       ],
     },
   ],

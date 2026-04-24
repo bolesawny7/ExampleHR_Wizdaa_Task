@@ -32,14 +32,22 @@ export class HcmOutboxWorker {
     this._draining = false;
   }
 
-  onModuleInit() { this.start(); }
-  onModuleDestroy() { this.stop(); }
+  onModuleInit() {
+    this.start();
+  }
+  onModuleDestroy() {
+    this.stop();
+  }
 
   start() {
     if (this._disabled || this._timer) return;
-    this._timer = setInterval(() => this.tick().catch((err) => {
-      this._logger.error(`Outbox tick failed: ${err.message}`);
-    }), this._intervalMs);
+    this._timer = setInterval(
+      () =>
+        this.tick().catch((err) => {
+          this._logger.error(`Outbox tick failed: ${err.message}`);
+        }),
+      this._intervalMs,
+    );
     this._timer.unref?.();
   }
 

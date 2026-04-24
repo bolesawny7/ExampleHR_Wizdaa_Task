@@ -86,7 +86,9 @@ export class ReconciliationService {
 
   _escalateAffectedRequests(balance) {
     const ids = this._timeOffRepo.listApprovedIdsForKey(
-      balance.employeeId, balance.locationId, balance.leaveType,
+      balance.employeeId,
+      balance.locationId,
+      balance.leaveType,
     );
     for (const id of ids) {
       try {

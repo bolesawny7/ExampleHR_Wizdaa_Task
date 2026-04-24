@@ -2,9 +2,12 @@ import { ValidationPipe } from '@nestjs/common';
 import { ValidationError } from './errors.js';
 
 /**
- * ValidationPipe configured to throw our own `ValidationError` instead of
- * Nest's default `BadRequestException` so all 4xx responses share the
- * `{ error: '<CODE>', message: ..., details? }` shape.
+ * Build a ValidationPipe that produces our unified `ValidationError`
+ * response shape instead of Nest's default `BadRequestException`.
+ *
+ * Used by `main.js` to install the app-global pipe.  Controllers should
+ * prefer the `Validate(Dto)` shorthand below so the per-DTO case reads
+ * cleanly at the call-site.
  */
 export function buildValidationPipe(options = {}) {
   return new ValidationPipe({
@@ -20,4 +23,15 @@ export function buildValidationPipe(options = {}) {
     },
     ...options,
   });
+}
+
+/**
+ * Convenience decorator-body validator: `@Body(Validate(CreateRequestDto))`.
+ *
+ * Named PascalCase on purpose: it is used exclusively as an argument to
+ * the `@Body()` parameter decorator, and PascalCase is the NestJS
+ * convention for identifiers that exist to be consumed by decorators.
+ */
+export function Validate(dto) {
+  return buildValidationPipe({ expectedType: dto });
 }

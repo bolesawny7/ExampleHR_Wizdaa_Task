@@ -23,8 +23,12 @@ import { TimeOffService } from './time-off.service.js';
       useFactory: (db, repo, balancesRepo, audit, clock, outbox) =>
         new TimeOffService(db, repo, balancesRepo, audit, clock, outbox),
       inject: [
-        DatabaseService, TimeOffRepository, BalancesRepository,
-        AuditService, Clock, HcmOutboxService,
+        DatabaseService,
+        TimeOffRepository,
+        BalancesRepository,
+        AuditService,
+        Clock,
+        HcmOutboxService,
       ],
     },
   ],

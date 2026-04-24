@@ -30,7 +30,9 @@ export class BalancesService {
     const list = this._repo.listBalancesForEmployee(employeeId);
     return list.map((bal) => {
       const reserved = this._repo.sumOpenReservations(
-        bal.employeeId, bal.locationId, bal.leaveType,
+        bal.employeeId,
+        bal.locationId,
+        bal.leaveType,
       );
       return {
         ...bal,
@@ -52,16 +54,29 @@ export class BalancesService {
    *
    * Idempotent: calling with identical asOf is a no-op.
    */
-  applyHcmBalanceSnapshot({ employeeId, locationId, leaveType, balance, asOf,
-                            source = 'HCM_BATCH', correlationId = null }) {
+  applyHcmBalanceSnapshot({
+    employeeId,
+    locationId,
+    leaveType,
+    balance,
+    asOf,
+    source = 'HCM_BATCH',
+    correlationId = null,
+  }) {
     const now = this._clock.now();
     const tx = this._dbService.transaction((db) => {
       const before = this._repo.findBalance(employeeId, locationId, leaveType, db);
-      const updated = this._repo.upsertBalance(db, {
-        employeeId, locationId, leaveType,
-        hcmBalance: balance,
-        hcmSnapshotAt: asOf,
-      }, now);
+      const updated = this._repo.upsertBalance(
+        db,
+        {
+          employeeId,
+          locationId,
+          leaveType,
+          hcmBalance: balance,
+          hcmSnapshotAt: asOf,
+        },
+        now,
+      );
 
       const ignored = before && asOf < before.hcmSnapshotAt;
       const reserved = this._repo.sumOpenReservations(employeeId, locationId, leaveType, db);
@@ -69,9 +84,11 @@ export class BalancesService {
 
       this._audit.logInTx(db, {
         actorType: 'HCM',
-        action: ignored ? 'BALANCE_SNAPSHOT_IGNORED_STALE' :
-                negativeDrift ? 'BALANCE_SNAPSHOT_NEGATIVE_DRIFT' :
-                                'BALANCE_SNAPSHOT_APPLIED',
+        action: ignored
+          ? 'BALANCE_SNAPSHOT_IGNORED_STALE'
+          : negativeDrift
+            ? 'BALANCE_SNAPSHOT_NEGATIVE_DRIFT'
+            : 'BALANCE_SNAPSHOT_APPLIED',
         targetType: 'BALANCE',
         targetId: `${employeeId}:${locationId}:${leaveType}`,
         before,

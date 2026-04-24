@@ -21,11 +21,13 @@ export class HcmOutboxService {
 
   /** Must be called from inside a `db.transaction()` callback. */
   enqueue(db, { requestId, op, payload, now }) {
-    db.prepare(`
+    db.prepare(
+      `
       INSERT INTO hcm_outbox
         (request_id, op, payload, attempts, next_attempt_at, status, created_at, updated_at)
       VALUES (?, ?, ?, 0, ?, 'PENDING', ?, ?)
-    `).run(requestId, op, JSON.stringify(payload), now, now, now);
+    `,
+    ).run(requestId, op, JSON.stringify(payload), now, now, now);
   }
 
   /**
@@ -35,19 +37,25 @@ export class HcmOutboxService {
   claimDue() {
     const now = this._clock.now();
     const tx = this._dbService.transaction((db) => {
-      const rows = db.prepare(`
+      const rows = db
+        .prepare(
+          `
         SELECT id, request_id AS requestId, op, payload, attempts
           FROM hcm_outbox
          WHERE status = 'PENDING' AND next_attempt_at <= ?
          ORDER BY id ASC LIMIT ?
-      `).all(now, this._batchSize);
+      `,
+        )
+        .all(now, this._batchSize);
       if (rows.length === 0) return [];
       const ids = rows.map((r) => r.id);
       const placeholders = ids.map(() => '?').join(',');
-      db.prepare(`
+      db.prepare(
+        `
         UPDATE hcm_outbox SET status = 'INFLIGHT', updated_at = ?
          WHERE id IN (${placeholders})
-      `).run(now, ...ids);
+      `,
+      ).run(now, ...ids);
       return rows.map((r) => ({ ...r, payload: JSON.parse(r.payload) }));
     });
     return tx();
@@ -55,58 +63,72 @@ export class HcmOutboxService {
 
   markDone(id) {
     const now = this._clock.now();
-    this._dbService.db.prepare(`
+    this._dbService.db
+      .prepare(
+        `
       UPDATE hcm_outbox
          SET status = 'DONE', updated_at = ?, last_error = NULL
        WHERE id = ?
-    `).run(now, id);
+    `,
+      )
+      .run(now, id);
   }
 
   scheduleRetry(id, errorMessage) {
     const now = this._clock.now();
     const tx = this._dbService.transaction((db) => {
-      const row = db.prepare(
-        'SELECT attempts FROM hcm_outbox WHERE id = ?',
-      ).get(id);
+      const row = db.prepare('SELECT attempts FROM hcm_outbox WHERE id = ?').get(id);
       if (!row) return;
       const nextAttempts = row.attempts + 1;
       if (nextAttempts >= this._maxAttempts) {
-        db.prepare(`
+        db.prepare(
+          `
           UPDATE hcm_outbox
              SET status = 'DEAD', attempts = ?, updated_at = ?, last_error = ?
            WHERE id = ?
-        `).run(nextAttempts, now, errorMessage, id);
+        `,
+        ).run(nextAttempts, now, errorMessage, id);
         return;
       }
       const backoff = computeBackoffMs(nextAttempts);
-      db.prepare(`
+      db.prepare(
+        `
         UPDATE hcm_outbox
            SET status = 'PENDING', attempts = ?, updated_at = ?,
                next_attempt_at = ?, last_error = ?
          WHERE id = ?
-      `).run(nextAttempts, now, now + backoff, errorMessage, id);
+      `,
+      ).run(nextAttempts, now, now + backoff, errorMessage, id);
     });
     tx();
   }
 
   list({ status, limit = 100 } = {}) {
     if (status) {
-      return this._dbService.db.prepare(`
+      return this._dbService.db
+        .prepare(
+          `
         SELECT id, request_id AS requestId, op, attempts, status,
                next_attempt_at AS nextAttemptAt, last_error AS lastError,
                created_at AS createdAt, updated_at AS updatedAt
           FROM hcm_outbox
          WHERE status = ?
          ORDER BY id DESC LIMIT ?
-      `).all(status, limit);
+      `,
+        )
+        .all(status, limit);
     }
-    return this._dbService.db.prepare(`
+    return this._dbService.db
+      .prepare(
+        `
       SELECT id, request_id AS requestId, op, attempts, status,
              next_attempt_at AS nextAttemptAt, last_error AS lastError,
              created_at AS createdAt, updated_at AS updatedAt
         FROM hcm_outbox
        ORDER BY id DESC LIMIT ?
-    `).all(limit);
+    `,
+      )
+      .all(limit);
   }
 
   /**
@@ -114,12 +136,16 @@ export class HcmOutboxService {
    * picks it up on its next tick.  Clears attempts and the last error.
    */
   resetToPending(id) {
-    this._dbService.db.prepare(`
+    this._dbService.db
+      .prepare(
+        `
       UPDATE hcm_outbox
          SET status = 'PENDING', next_attempt_at = 0, attempts = 0,
              last_error = NULL
        WHERE id = ?
-    `).run(id);
+    `,
+      )
+      .run(id);
   }
 }
 

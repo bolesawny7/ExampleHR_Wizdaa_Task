@@ -15,18 +15,25 @@ describe('Request lifecycle', () => {
     balances = harness.app.get(BalancesService);
     worker = harness.app.get(HcmOutboxWorker);
     harness.seedBalance({
-      employeeId: 'E-1', locationId: 'L-1', leaveType: 'ANNUAL', balance: 10,
+      employeeId: 'E-1',
+      locationId: 'L-1',
+      leaveType: 'ANNUAL',
+      balance: 10,
     });
   });
 
-  afterEach(async () => { await harness.close(); });
+  afterEach(async () => {
+    await harness.close();
+  });
 
   test('full happy path: create -> approve -> drain outbox -> CONSUMED', async () => {
     const r = timeOff.createRequest({
       actor: { sub: 'E-1', roles: ['employee'], managerId: 'M-1' },
       input: {
-        locationId: 'L-1', leaveType: 'ANNUAL',
-        startDate: '2026-05-04', endDate: '2026-05-06',
+        locationId: 'L-1',
+        leaveType: 'ANNUAL',
+        startDate: '2026-05-04',
+        endDate: '2026-05-06',
       },
     });
     timeOff.approve({
@@ -51,8 +58,10 @@ describe('Request lifecycle', () => {
     const r = timeOff.createRequest({
       actor: { sub: 'E-1', roles: ['employee'], managerId: 'M-1' },
       input: {
-        locationId: 'L-1', leaveType: 'ANNUAL',
-        startDate: '2026-05-04', endDate: '2026-05-05',
+        locationId: 'L-1',
+        leaveType: 'ANNUAL',
+        startDate: '2026-05-04',
+        endDate: '2026-05-05',
       },
     });
     timeOff.approve({
@@ -81,8 +90,10 @@ describe('Request lifecycle', () => {
     const r = timeOff.createRequest({
       actor: { sub: 'E-1', roles: ['employee'], managerId: 'M-1' },
       input: {
-        locationId: 'L-1', leaveType: 'ANNUAL',
-        startDate: '2026-05-04', endDate: '2026-05-05',
+        locationId: 'L-1',
+        leaveType: 'ANNUAL',
+        startDate: '2026-05-04',
+        endDate: '2026-05-05',
       },
     });
     timeOff.approve({
@@ -98,8 +109,10 @@ describe('Request lifecycle', () => {
     const r = timeOff.createRequest({
       actor: { sub: 'E-1', roles: ['employee'], managerId: 'M-1' },
       input: {
-        locationId: 'L-1', leaveType: 'ANNUAL',
-        startDate: '2026-05-04', endDate: '2026-05-10',
+        locationId: 'L-1',
+        leaveType: 'ANNUAL',
+        startDate: '2026-05-04',
+        endDate: '2026-05-10',
       }, // 7 days
     });
     timeOff.approve({
@@ -113,8 +126,9 @@ describe('Request lifecycle', () => {
     await worker.tick();
     expect(timeOff.getById(r.id).state).toBe('REVIEW_REQUIRED');
     // HCM was not called with consume because we bailed.
-    expect(harness.hcmState.calls().filter((c) => c.path === '/api/v1/time-off' && c.method === 'POST'))
-      .toHaveLength(0);
+    expect(
+      harness.hcmState.calls().filter((c) => c.path === '/api/v1/time-off' && c.method === 'POST'),
+    ).toHaveLength(0);
   });
 
   test('outbox exhausts attempts and marks DEAD', async () => {
@@ -127,8 +141,10 @@ describe('Request lifecycle', () => {
     const r = timeOff.createRequest({
       actor: { sub: 'E-1', roles: ['employee'], managerId: 'M-1' },
       input: {
-        locationId: 'L-1', leaveType: 'ANNUAL',
-        startDate: '2026-05-04', endDate: '2026-05-05',
+        locationId: 'L-1',
+        leaveType: 'ANNUAL',
+        startDate: '2026-05-04',
+        endDate: '2026-05-05',
       },
     });
     timeOff.approve({
@@ -140,9 +156,9 @@ describe('Request lifecycle', () => {
       await worker.tick();
       harness.clock.advance(5 * 60_000);
     }
-    const deadRow = harness.db.db.prepare(
-      "SELECT status FROM hcm_outbox WHERE request_id = ?",
-    ).get(r.id);
+    const deadRow = harness.db.db
+      .prepare('SELECT status FROM hcm_outbox WHERE request_id = ?')
+      .get(r.id);
     expect(deadRow.status).toBe('DEAD');
   });
 });

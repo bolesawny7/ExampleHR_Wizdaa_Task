@@ -7,26 +7,28 @@ describe('signature.util', () => {
 
   test('verify accepts a matching signature within skew window', () => {
     const sig = sign(secret, ts, body);
-    expect(verify({ secret, timestampMs: ts, rawBody: body, signature: sig, now: ts + 100 }))
-      .toBe(true);
+    expect(verify({ secret, timestampMs: ts, rawBody: body, signature: sig, now: ts + 100 })).toBe(
+      true,
+    );
   });
 
   test('verify rejects when timestamp is outside skew window', () => {
     const sig = sign(secret, ts, body);
-    expect(verify({ secret, timestampMs: ts, rawBody: body, signature: sig,
-                    now: ts + 10 * 60 * 1000 })).toBe(false);
+    expect(
+      verify({ secret, timestampMs: ts, rawBody: body, signature: sig, now: ts + 10 * 60 * 1000 }),
+    ).toBe(false);
   });
 
   test('verify rejects on wrong body', () => {
     const sig = sign(secret, ts, body);
-    expect(verify({ secret, timestampMs: ts, rawBody: '{}', signature: sig, now: ts }))
-      .toBe(false);
+    expect(verify({ secret, timestampMs: ts, rawBody: '{}', signature: sig, now: ts })).toBe(false);
   });
 
   test('verify rejects on wrong secret', () => {
     const sig = sign(secret, ts, body);
-    expect(verify({ secret: 'other', timestampMs: ts, rawBody: body, signature: sig, now: ts }))
-      .toBe(false);
+    expect(
+      verify({ secret: 'other', timestampMs: ts, rawBody: body, signature: sig, now: ts }),
+    ).toBe(false);
   });
 
   test('verify rejects missing signature/timestamp', () => {

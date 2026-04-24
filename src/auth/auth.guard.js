@@ -18,10 +18,7 @@ export const Public = () => SetMetadata(PUBLIC_METADATA_KEY, true);
  */
 @Injectable()
 export class JwtAuthGuard {
-  constructor(
-    @Inject(Reflector) reflector,
-    @Inject(JwtService) jwtService,
-  ) {
+  constructor(@Inject(Reflector) reflector, @Inject(JwtService) jwtService) {
     this._reflector = reflector;
     this._jwt = jwtService;
   }

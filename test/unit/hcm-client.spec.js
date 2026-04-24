@@ -4,7 +4,9 @@ import { ConfigService } from '../../src/config/config.service.js';
 
 describe('HcmClient', () => {
   const config = new ConfigService({
-    JWT_SECRET: 'x', HCM_BASE_URL: 'http://mock', HCM_API_KEY: 'k',
+    JWT_SECRET: 'x',
+    HCM_BASE_URL: 'http://mock',
+    HCM_API_KEY: 'k',
   });
 
   function clientWith(fetchImpl) {
@@ -13,10 +15,15 @@ describe('HcmClient', () => {
     return c;
   }
 
-  const ok = (body = {}) => async () => ({
-    status: 200, ok: true,
-    async text() { return JSON.stringify(body); },
-  });
+  const ok =
+    (body = {}) =>
+    async () => ({
+      status: 200,
+      ok: true,
+      async text() {
+        return JSON.stringify(body);
+      },
+    });
 
   test('getBalance returns parsed JSON on 200', async () => {
     const c = clientWith(ok({ balance: 10 }));
@@ -26,41 +33,69 @@ describe('HcmClient', () => {
 
   test('5xx throws HcmTransientError', async () => {
     const c = clientWith(async () => ({
-      status: 503, ok: false,
-      async text() { return 'down'; },
+      status: 503,
+      ok: false,
+      async text() {
+        return 'down';
+      },
     }));
-    await expect(c.getBalance({ employeeId: 'E', locationId: 'L', leaveType: 'ANNUAL' }))
-      .rejects.toBeInstanceOf(HcmTransientError);
+    await expect(
+      c.getBalance({ employeeId: 'E', locationId: 'L', leaveType: 'ANNUAL' }),
+    ).rejects.toBeInstanceOf(HcmTransientError);
   });
 
   test('422 throws HcmPermanentError', async () => {
     const c = clientWith(async () => ({
-      status: 422, ok: false,
-      async text() { return '{"error":"BAD"}'; },
+      status: 422,
+      ok: false,
+      async text() {
+        return '{"error":"BAD"}';
+      },
     }));
-    await expect(c.consumeBalance({
-      employeeId: 'E', locationId: 'L', leaveType: 'ANNUAL',
-      days: 1, startDate: '2026-01-01', endDate: '2026-01-01',
-      externalRequestId: 'ext_1', correlationId: 'c',
-    })).rejects.toBeInstanceOf(HcmPermanentError);
+    await expect(
+      c.consumeBalance({
+        employeeId: 'E',
+        locationId: 'L',
+        leaveType: 'ANNUAL',
+        days: 1,
+        startDate: '2026-01-01',
+        endDate: '2026-01-01',
+        externalRequestId: 'ext_1',
+        correlationId: 'c',
+      }),
+    ).rejects.toBeInstanceOf(HcmPermanentError);
   });
 
   test('network failure throws HcmTransientError', async () => {
-    const c = clientWith(async () => { throw new Error('ECONNREFUSED'); });
-    await expect(c.getBalance({ employeeId: 'E', locationId: 'L', leaveType: 'ANNUAL' }))
-      .rejects.toBeInstanceOf(HcmTransientError);
+    const c = clientWith(async () => {
+      throw new Error('ECONNREFUSED');
+    });
+    await expect(
+      c.getBalance({ employeeId: 'E', locationId: 'L', leaveType: 'ANNUAL' }),
+    ).rejects.toBeInstanceOf(HcmTransientError);
   });
 
   test('consumeBalance POSTs to /api/v1/time-off with payload', async () => {
     let captured;
     const c = clientWith(async (url, init) => {
       captured = { url, body: JSON.parse(init.body) };
-      return { status: 200, ok: true, async text() { return '{}'; } };
+      return {
+        status: 200,
+        ok: true,
+        async text() {
+          return '{}';
+        },
+      };
     });
     await c.consumeBalance({
-      employeeId: 'E', locationId: 'L', leaveType: 'ANNUAL',
-      days: 2, startDate: '2026-01-01', endDate: '2026-01-02',
-      externalRequestId: 'ext_x', correlationId: 'c',
+      employeeId: 'E',
+      locationId: 'L',
+      leaveType: 'ANNUAL',
+      days: 2,
+      startDate: '2026-01-01',
+      endDate: '2026-01-02',
+      externalRequestId: 'ext_x',
+      correlationId: 'c',
     });
     expect(captured.url).toMatch(/\/api\/v1\/time-off$/);
     expect(captured.body.externalRequestId).toBe('ext_x');
@@ -69,9 +104,14 @@ describe('HcmClient', () => {
 
   test('429 maps to transient', async () => {
     const c = clientWith(async () => ({
-      status: 429, ok: false, async text() { return ''; },
+      status: 429,
+      ok: false,
+      async text() {
+        return '';
+      },
     }));
-    await expect(c.getBalance({ employeeId: 'E', locationId: 'L', leaveType: 'ANNUAL' }))
-      .rejects.toBeInstanceOf(HcmTransientError);
+    await expect(
+      c.getBalance({ employeeId: 'E', locationId: 'L', leaveType: 'ANNUAL' }),
+    ).rejects.toBeInstanceOf(HcmTransientError);
   });
 });

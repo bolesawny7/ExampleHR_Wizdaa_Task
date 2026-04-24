@@ -21,7 +21,7 @@ export class HcmClient {
     const url = `${this._baseUrl}${path}`;
     const headers = {
       'content-type': 'application/json',
-      'authorization': `Bearer ${this._apiKey}`,
+      authorization: `Bearer ${this._apiKey}`,
     };
     let res;
     try {
@@ -44,13 +44,9 @@ export class HcmClient {
       return text ? JSON.parse(text) : null;
     }
     if (res.status === 408 || res.status === 429 || res.status >= 500) {
-      throw new HcmTransientError(
-        `HCM ${method} ${path} -> ${res.status}: ${text}`, res.status,
-      );
+      throw new HcmTransientError(`HCM ${method} ${path} -> ${res.status}: ${text}`, res.status);
     }
-    throw new HcmPermanentError(
-      `HCM ${method} ${path} -> ${res.status}: ${text}`, res.status,
-    );
+    throw new HcmPermanentError(`HCM ${method} ${path} -> ${res.status}: ${text}`, res.status);
   }
 
   getBalance({ employeeId, locationId, leaveType }) {
@@ -58,11 +54,25 @@ export class HcmClient {
     return this._request('GET', `/api/v1/balances?${qs}`);
   }
 
-  consumeBalance({ employeeId, locationId, leaveType, days, startDate, endDate,
-                   externalRequestId, correlationId }) {
+  consumeBalance({
+    employeeId,
+    locationId,
+    leaveType,
+    days,
+    startDate,
+    endDate,
+    externalRequestId,
+    correlationId,
+  }) {
     return this._request('POST', '/api/v1/time-off', {
-      employeeId, locationId, leaveType, days, startDate, endDate,
-      externalRequestId, correlationId,
+      employeeId,
+      locationId,
+      leaveType,
+      days,
+      startDate,
+      endDate,
+      externalRequestId,
+      correlationId,
     });
   }
 }

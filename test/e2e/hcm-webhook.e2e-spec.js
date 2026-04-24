@@ -11,11 +11,16 @@ describe('HCM webhook (e2e)', () => {
     server = harness.app.getHttpServer();
     secret = 'test-webhook-secret';
     harness.seedBalance({
-      employeeId: 'E-1', locationId: 'L-1', leaveType: 'ANNUAL', balance: 10,
+      employeeId: 'E-1',
+      locationId: 'L-1',
+      leaveType: 'ANNUAL',
+      balance: 10,
     });
   });
 
-  afterEach(async () => { await harness.close(); });
+  afterEach(async () => {
+    await harness.close();
+  });
 
   function send(pathSuffix, body) {
     // Signature verification uses real wall-clock time (it has to, since
@@ -37,9 +42,7 @@ describe('HCM webhook (e2e)', () => {
     const res = await send('batch', {
       batchId: 'B-1',
       asOf: new Date(harness.clock.now()).toISOString(),
-      balances: [
-        { employeeId: 'E-1', locationId: 'L-1', leaveType: 'ANNUAL', balance: 15 },
-      ],
+      balances: [{ employeeId: 'E-1', locationId: 'L-1', leaveType: 'ANNUAL', balance: 15 }],
     });
     expect(res.status).toBe(200);
     expect(res.body.appliedCount).toBe(1);
@@ -77,8 +80,11 @@ describe('HCM webhook (e2e)', () => {
   test('single balance update endpoint', async () => {
     harness.clock.advance(1000);
     const res = await send('balance', {
-      employeeId: 'E-1', locationId: 'L-1', leaveType: 'ANNUAL',
-      balance: 8, asOf: new Date(harness.clock.now()).toISOString(),
+      employeeId: 'E-1',
+      locationId: 'L-1',
+      leaveType: 'ANNUAL',
+      balance: 8,
+      asOf: new Date(harness.clock.now()).toISOString(),
     });
     expect(res.status).toBe(200);
     const balances = harness.app.get(BalancesService);
@@ -88,9 +94,7 @@ describe('HCM webhook (e2e)', () => {
   test('rejects invalid entries with 400 VALIDATION_ERROR (after signature check)', async () => {
     const res = await send('batch', {
       batchId: 'B-bad',
-      balances: [
-        { employeeId: 'E-1' },
-      ],
+      balances: [{ employeeId: 'E-1' }],
     });
     expect(res.status).toBe(400);
     expect(res.body.error).toBe('VALIDATION_ERROR');

@@ -637,6 +637,16 @@ three tiers:
   before DTO validation** so a bad signature never leaks field names.
 - `admin-api.e2e-spec` — non-admin 403; reconcile with/without key;
   outbox list/filter/drain/retry; manager lists + rejects with reason.
+- `smoke-flow.e2e-spec` — happy-path: health → auth → file → approve →
+  outbox → CONSUMED → HCM debited → HCM pushes anniversary-bonus batch
+  → balance rises. One test, end-to-end, proves the full wiring.
+- `real-mock-hcm.e2e-spec` — **boots the standalone mock HCM over real
+  HTTP** on a random port and lets `HcmClient` call it with `globalThis.fetch`.
+  All other HCM suites inject the mock's `fetch` for determinism; this
+  one exists explicitly to satisfy the PDF's suggestion — _"deploy real
+  mock servers … as part of your test suite"_ — and to exercise the
+  production-wiring (URL construction, JSON parsing, error mapping) that
+  an in-process shim would silently bypass.
 
 ### 9.4 Coverage target
 

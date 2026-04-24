@@ -220,6 +220,32 @@ The two biggest deliberate choices worth calling out up front:
    when production traffic justifies it. Adding an always-on background
    job _today_ would be pure ceremony.
 
+## Packaging for submission
+
+The Wizdaa email requires a single `.zip` under 50 MB, excluding
+`node_modules` and other generated folders. From the repo root:
+
+```bash
+zip -r wizdaa-time-off.zip . \
+  -x "node_modules/*" ".git/*" "coverage/*" "dist/*" "*.sqlite"
+```
+
+The resulting archive is approximately 0.7 MB and contains:
+
+- `src/`, `test/`, `TRD.md`, `README.md`
+- `package.json`, `package-lock.json` (for deterministic installs)
+- `babel.config.json`, `jsconfig.json`, `.eslintrc.cjs`, `.prettierrc.json`,
+  `.prettierignore`, `.gitignore`, `.npmrc`, `.env.example`
+
+The reviewer runs:
+
+```bash
+unzip wizdaa-time-off.zip -d time-off && cd time-off
+npm install
+npm test
+npm run test:cov        # coverage/index.html is the proof
+```
+
 ## License
 
 UNLICENSED — interview exercise.

@@ -1,8 +1,7 @@
 import {
   Body, Controller, Get, Headers, HttpCode, Inject, Param, Post, Req,
-  UseGuards,
 } from '@nestjs/common';
-import { JwtAuthGuard, Roles } from '../auth/auth.guard.js';
+import { Roles } from '../auth/auth.guard.js';
 import { NotFoundError } from '../common/errors.js';
 import { IdempotencyService } from '../common/idempotency.service.js';
 import { buildValidationPipe } from '../common/validation.js';
@@ -12,8 +11,9 @@ import { TimeOffService } from './time-off.service.js';
 const validateCreate = buildValidationPipe({ expectedType: CreateRequestDto });
 const validateReject = buildValidationPipe({ expectedType: RejectRequestDto });
 
+// JwtAuthGuard is registered globally (see AppModule); here we only need
+// @Roles() for role checks and let the service layer enforce ownership.
 @Controller()
-@UseGuards(JwtAuthGuard)
 export class TimeOffController {
   constructor(
     @Inject(TimeOffService) timeOff,

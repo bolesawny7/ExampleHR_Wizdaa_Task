@@ -1,9 +1,10 @@
-import { Controller, Get, Inject, Req, UseGuards } from '@nestjs/common';
-import { JwtAuthGuard, Roles } from '../auth/auth.guard.js';
+import { Controller, Get, Inject, Req } from '@nestjs/common';
+import { Roles } from '../auth/auth.guard.js';
 import { BalancesService } from './balances.service.js';
 
+// JwtAuthGuard is registered globally via APP_GUARD in AppModule; route
+// authorization is expressed with @Roles() and service-layer ownership checks.
 @Controller()
-@UseGuards(JwtAuthGuard)
 export class BalancesController {
   constructor(@Inject(BalancesService) balances) {
     this._balances = balances;

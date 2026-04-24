@@ -82,7 +82,7 @@ view of HCM balance + a local ledger of *reservations*.**
 ```
 effective_balance(employee, location, leaveType) =
         cached_hcm_balance
-      - SUM(reservation.days WHERE state IN (PENDING, APPROVED, PENDING_CONSUME))
+      - SUM(reservation.days WHERE reservation.state = 'OPEN')
 ```
 
 We always display *effective balance* to the user. When a request is filed, we
@@ -109,18 +109,19 @@ pass the "enough balance" check and commit, producing negative effective
 balance.
 
 **Chosen solution: pessimistic locking inside a single SQLite transaction,
-using `BEGIN IMMEDIATE` which acquires a `RESERVED` write lock.** SQLite only
-supports one writer at a time, so any competing `BEGIN IMMEDIATE` waits on its
-`busy_timeout`. Our `balanceTransaction()` helper:
+using `BEGIN IMMEDIATE` which acquires SQLite's `RESERVED` write lock.**
+Any competing `BEGIN IMMEDIATE` waits on `busy_timeout`.  The wrapper is
+`DatabaseService.transaction(fn)`; inside `TimeOffService.createRequest`
+it does:
 
 1. `BEGIN IMMEDIATE`
-2. Read `cached_hcm_balance` and sum of open reservations for the key.
-3. Assert invariant.
-4. Insert reservation.
-5. `COMMIT`
+2. Read `cached_hcm_balance` and `SUM(open reservations)` for the key.
+3. Assert `effective ≥ requested`.
+4. Insert the reservation row + the request row + the audit event.
+5. `COMMIT`.
 
-Violations throw `InsufficientBalanceError` which the controller maps to HTTP
-409 Conflict.
+Violating the invariant throws `InsufficientBalanceError` which maps to
+HTTP 409.
 
 **Alternatives considered.**
 
@@ -188,8 +189,15 @@ local invariant for reads.**
   that changes the request state. A background worker pops from the outbox,
   calls HCM, and marks success or retries. This makes approval durable even
   if HCM is down.
-- **Retry policy:** exponential backoff, jittered, max 8 attempts over ~24h.
-  Permanent failure transitions the request to `HCM_FAILED` and alerts.
+- **Retry policy:** exponential backoff `min(60 s, 2^attempt × 500 ms)`
+  with ±30 % jitter, capped at `OUTBOX_MAX_ATTEMPTS` (default 8).  With
+  the default cap the worst-case total wait before `DEAD` is roughly
+  2 minutes — appropriate for the interactive approval flow in this
+  exercise.  For production use, ops tune the cap + floor to match the
+  HCM's realistic outage profile (the §10 work item mentions moving the
+  outbox to a real message queue for longer-horizon retries).  Permanent
+  (4xx) HCM failures transition the request to `HCM_FAILED` and release
+  the reservation immediately without further retries.
 - **Double-check before side-effect:** before the outbox worker calls
   `hcm.consumeBalance()`, it re-reads the *current* HCM balance via the
   realtime API. If HCM's balance is lower than our expected value, we
@@ -212,43 +220,72 @@ local invariant for reads.**
 **Problem.** A flaky mobile client retries `POST /requests`. Without care, we
 create two reservations.
 
-**Chosen solution: `Idempotency-Key` header on all mutating endpoints + unique
-index on `idempotency_keys(key, endpoint)`**. First call records the key and
-response; subsequent calls with the same key return the stored response. TTL
-24h. Same mechanism guards our outbound HCM calls (`externalRequestId`).
+**Chosen solution: `Idempotency-Key` header on mutating endpoints, scoped
+by `(key, endpoint, actor_id)`** — scoping by actor+endpoint prevents two
+different principals from colliding on the same opaque key and prevents a
+key intended for `POST /requests` from being replayed against
+`POST /requests/:id/cancel`.  The primary key
+`(key, endpoint, actor_id)` on `idempotency_keys` enforces this.  First
+call stores the response and HTTP status; subsequent calls return it.
+TTL 24 h.  The outbound side is kept idempotent by sending the same
+`externalRequestId` on every retry.
 
 ### C6 — Security & authorization
 
-- **AuthN.** JWT signed with asymmetric keys (issuer = ExampleHR SSO). Tokens
-  carry `sub` (employeeId), `roles[]` (`employee`, `manager`, `admin`,
-  `hcm_webhook`), and `orgId`.
-- **AuthZ.** Guard each route with `@Roles()`. An employee can only read/write
-  their own resources; a manager can read/approve/reject requests of employees
-  whose `managerId` is the requester's `sub`.
-- **Webhook signature.** HCM batch webhook is signed with HMAC-SHA256 over
-  `timestamp + body`, verified in constant time; replay window = 5 minutes.
-- **Input validation.** Every DTO validated with `class-validator`. Whitelist
-  unknown fields. All date/duration math on the server.
-- **SQL injection.** All DB access through prepared statements
-  (`better-sqlite3`). No string interpolation in SQL.
-- **Rate limiting.** Per-principal sliding window (100 req/min default,
-  tunable). Webhook path has its own bucket.
-- **Secrets.** Loaded from env with Zod-like validation at boot. Never logged.
-- **PII minimization.** Only opaque IDs are logged; employee names and
-  contact details are never persisted by this service.
-- **Audit log.** Every state transition, every HCM call, every admin action
-  goes to an append-only `audit_events` table with an actor, action, target,
-  before/after, and correlation ID.
+- **AuthN.** JWT bearer token via `Authorization: Bearer <jwt>`.  HS256 with
+  a shared secret is used in this exercise for simplicity; production should
+  switch to RS256 + JWKS fetched from the ExampleHR SSO.  Tokens carry
+  `sub` (employeeId), `roles[]` (`employee`, `manager`, `admin`), `orgId`,
+  and optional `managerId`.
+- **AuthZ.** `@Roles()` metadata is enforced by `JwtAuthGuard`, plus
+  service-layer *data-ownership* checks (an employee can only read/write
+  their own resources; a manager can only approve/reject requests whose
+  `managerId` matches their `sub`).  Role ≠ authorization on its own.
+- **Webhook signature.** HCM webhooks are signed with HMAC-SHA256 over
+  `${timestamp}.${rawBody}`, verified in constant time with a ±5 minute
+  replay window.  Enforced by `HcmSignatureGuard`, which runs *before* the
+  `ValidationPipe` so a bad signature never leaks DTO shape.
+- **Input validation.** Every POST body has a `class-validator` DTO with
+  `whitelist` + `forbidNonWhitelisted`.  Validation errors are wrapped into
+  our own `{ error: "VALIDATION_ERROR", message, details }` shape via a
+  single `buildValidationPipe()` factory.
+- **SQL injection.** All DB access goes through `better-sqlite3` prepared
+  statements; there is no string interpolation in SQL anywhere.
+- **Secrets.** Loaded from env at boot.  `JWT_SECRET` is required and the
+  service refuses to start without it outside tests.  Secrets are never
+  logged.
+- **PII minimization.** Only opaque IDs are persisted or logged; names and
+  contact details are never stored by this service.
+- **Audit log.** Every state transition and every balance snapshot writes
+  an append-only row to `audit_events` (actor, action, target,
+  before/after JSON, correlation id), inside the same transaction as the
+  business write so an event cannot be lost on crash.
+
+**Not implemented in this exercise, acknowledged in §10:** rate-limiting
+middleware and env-schema validation (e.g. Zod) are obvious future hardening
+but add no value at the current workload.
 
 ### C7 — Observability
 
-- Structured JSON logs with `requestId`, `correlationId`, `actor`,
-  `action`, `outcome`, `durationMs`.
-- Log HCM calls with `externalRequestId` and HTTP status.
-- Health check endpoint `/health` (liveness + readiness; readiness probes
-  DB + last-successful HCM ping within SLA).
-- Metrics-ready hooks (counters for `requests_created`, `reservations_open`,
-  `hcm_calls_total`, `drift_detected_total`).
+What is implemented today:
+
+- **NestJS Logger** writes service-level events (outbox errors, HCM pull
+  failures, escalation failures) with a class-tagged prefix.
+- **`correlationId`** is generated on request creation (`newCorrelationId()`),
+  threaded through the HCM outbox payload, and persisted on every
+  `audit_events` row so a full request's story can be reconstructed by
+  `SELECT * FROM audit_events WHERE correlation_id = ? ORDER BY id`.
+- **`externalRequestId`** is persisted on the request row on approval and
+  sent with every HCM consume call, making the outbound side idempotent
+  on retries.
+- **`GET /health`** runs a `SELECT 1` against SQLite; returns
+  `{ status: 'ok' | 'degraded', db }` for liveness/readiness probes.
+
+What is deferred (§10): structured JSON logs, an HCM-ping readiness check,
+request-id middleware, and Prometheus-style counters
+(`requests_created_total`, `hcm_calls_total`, etc.).  None of these add
+value until the service is deployed somewhere that scrapes them; they are
+trivial to add when that time comes.
 
 ## 5. Architecture
 
@@ -270,8 +307,8 @@ response; subsequent calls with the same key return the stored response. TTL
   │   │ Guards   │──│   Module     │──│  ┌───────────────────┐  │  │
   │   └──────────┘  │  ┌────────┐  │  │  │ HcmClient (out)   │  │  │
   │                 │  │ State  │  │  │  │ HcmController(in) │  │  │
-  │                 │  │ Machine│  │  │  │ Reconciliation    │  │  │
-  │                 │  └────────┘  │  │  │   Service (cron)  │  │  │
+  │                 │  │ Machine│  │  │  │ Outbox worker     │  │  │
+  │                 │  └────────┘  │  │  │ Reconciliation    │  │  │
   │                 └───────┬──────┘  │  └───────────────────┘  │  │
   │                         │         └──────────┬──────────────┘  │
   │                  ┌──────▼─────────────────────▼──────────────┐ │
@@ -300,8 +337,9 @@ CREATE TABLE balances (
 CREATE INDEX idx_balances_employee ON balances(employee_id);
 
 CREATE TABLE requests (
-  id                   TEXT PRIMARY KEY,         -- UUID
+  id                   TEXT PRIMARY KEY,         -- `r_<nanoid>`
   employee_id          TEXT NOT NULL,
+  manager_id           TEXT,
   location_id          TEXT NOT NULL,
   leave_type           TEXT NOT NULL,
   start_date           TEXT NOT NULL,            -- ISO date
@@ -338,7 +376,7 @@ CREATE INDEX idx_reservations_open_key
 CREATE TABLE hcm_outbox (
   id                  INTEGER PRIMARY KEY AUTOINCREMENT,
   request_id          TEXT NOT NULL REFERENCES requests(id),
-  op                  TEXT NOT NULL,            -- CONSUME | RELEASE | FETCH
+  op                  TEXT NOT NULL,            -- 'CONSUME' today (column kept open for future ops)
   payload             TEXT NOT NULL,            -- JSON
   attempts            INTEGER NOT NULL DEFAULT 0,
   next_attempt_at     INTEGER NOT NULL,
@@ -411,18 +449,20 @@ Invariants enforced by the state machine module:
 
 ### 5.4 Sync & Reconciliation
 
+Three inputs feed `BalancesService.applyHcmBalanceSnapshot()` (see §C3 for
+the full rationale, this section lists the mechanics only):
+
 - **Inbound batch (`POST /hcm/webhooks/batch`).** Full or partial corpus.
-  Each row: `{ employeeId, locationId, leaveType, balance, asOf }`. We
-  `applyHcmBalanceSnapshot()` per row, inside a transaction. If new balance
-  < open reservations for the key, we raise `NEGATIVE_DRIFT` (request → review).
-- **Inbound realtime upsert (`POST /hcm/balances`).** Per-key snapshot; same
-  handler.
-- **Outbound reconciliation cron.** Every 15 min:
-  1. Select top-N keys active in last 7 days.
-  2. For each, call HCM `getBalance(employeeId, locationId, leaveType)`.
-  3. If `|hcm - cached| > tolerance`, `applyHcmBalanceSnapshot()`.
-- **On-demand reconciliation (`POST /admin/reconcile`).** Ops tool for a
-  single employee or location.
+  Each row: `{ employeeId, locationId, leaveType, balance, asOf }`.  Each
+  row is applied in its own transaction so a bad row can't poison the
+  batch.  When the new HCM balance is below open reservations we tag the
+  audit event `BALANCE_SNAPSHOT_NEGATIVE_DRIFT` and move affected
+  `APPROVED` requests to `REVIEW_REQUIRED`.
+- **Inbound single-key (`POST /hcm/webhooks/balance`).** Same handler
+  with a one-row batch.
+- **On-demand pull (`POST /admin/reconcile`).** Either
+  `{ key: {...} }` to reconcile one tuple, or an empty body to iterate
+  `reconcileActive()` over keys touched in the last 7 days.
 
 ### 5.5 Outbox worker
 
@@ -530,50 +570,72 @@ X-Hcm-Signature: sha256=...
 | Drift detection | Push (batch webhook) + JIT (pre-consume check) + on-demand pull | Pull only / Push only | Layered defense for a lying HCM.  Scheduled pull deferred until real traffic demands it. |
 | Idempotency | Key+endpoint+actor in SQL | Redis | No extra infra; SQLite is fine at expected QPS. |
 | ORM | `better-sqlite3` direct + repository pattern | TypeORM / Prisma | Synchronous API matches SQLite; transactional control is explicit; smaller surface. |
-| Auth | JWT RS256 | Session | Stateless, already used across ExampleHR. |
+| Auth | JWT HS256 today (exercise); RS256 + JWKS in prod | Session | Stateless, already used across ExampleHR. |
 
 ## 8. Deployment & Config
 
-- 12-factor. All config via env (`.env.example` provided).
-- Single process is enough at current scale; horizontal scaling requires
-  moving from SQLite to Postgres and moving idempotency/outbox to Redis or
-  Postgres (this is an explicit future item §10).
-- SQLite file backed up via LiteStream or periodic snapshot (outside scope).
+- Twelve-factor.  All config via env; see `.env.example`.
+- Single process is sufficient at the exercise's scale: SQLite serialises
+  all writes, in-process scheduling drains the outbox, and in-process
+  state powers idempotency.  Horizontal scale is an explicit §10 item
+  (Postgres + Redis + a real message queue).
 
 ## 9. Testing Strategy
 
 The PDF emphasizes that **the value lies in the rigor of tests**. We use
 three tiers:
 
-### 9.1 Unit tests (fast, no I/O, mock DB or in-memory SQLite)
+### 9.1 Unit tests (pure logic + narrow DB tests with in-memory SQLite)
 
-- `state-machine.spec` — every allowed/denied transition.
-- `balances.service.spec` — effective balance math, drift classification,
-  reservation release.
-- `reconciliation.service.spec` — snapshot application, negative-drift
-  branch, idempotency.
-- `hcm.outbox.spec` — backoff, DLQ, retry ceiling.
-- `signature.util.spec` — valid sig, expired timestamp, wrong body.
+- `state-machine.spec` — every allowed/denied transition, terminal-state
+  rules.
+- `dates.spec` — ISO parsing + inclusive day counting with boundary cases
+  (leap day, single day, end-before-start).
+- `signature.spec` — HMAC round-trip, replay window, bad secret/body.
+- `errors.spec` / `exceptions.filter.spec` — DomainError shapes and the
+  filter's 500 fallback for non-`HttpException` throwables.
+- `balances.service.spec` — effective-balance math, snapshot idempotency
+  on identical `asOf`, stale-asOf ignored, negative-drift flagging.
+- `time-off.service.spec` — full lifecycle, auth, invalid transitions,
+  `CONCURRENT_UPDATE` surfaces when `updateState` loses the race.
+- `time-off-repository.spec` — insert/update/list invariants.
+- `idempotency.service.spec` — scoping by (key, endpoint, actor), TTL,
+  no-op on missing key.
+- `audit.service.spec` — row shape, null defaults, `String(targetId)`.
+- `jwt.service.spec` — round-trip, expired, tampered.
+- `hcm-client.spec` — 5xx→transient, 4xx→permanent, network failure,
+  429.
+- `outbox-backoff.spec` — `computeBackoffMs` is monotonic on average,
+  capped and never negative.
+- `health.controller.spec` — healthy / degraded / DB-throws branches.
 
-### 9.2 Integration tests (real in-memory SQLite, Nest DI container)
+### 9.2 Integration tests (real in-memory SQLite, Nest DI container, mock HCM)
 
-- Full request lifecycle PENDING → APPROVED → CONSUMED.
-- Two concurrent requests for same key — exactly one succeeds (race).
-- Approve while HCM down — outbox retries and eventually succeeds.
-- HCM permanently rejects — request → `HCM_FAILED`, reservation released.
-- Inbound batch reduces balance below open reservations → `REVIEW_REQUIRED`.
-- Idempotency: same `Idempotency-Key` twice returns same response.
+- `lifecycle.spec` — create → approve → drain outbox → `CONSUMED`; HCM
+  transient retries eventually converge; HCM permanent failure →
+  `HCM_FAILED` with reservation released; defensive pre-consume flag
+  catches mid-flight HCM drift → `REVIEW_REQUIRED`; outbox `DEAD` after
+  `OUTBOX_MAX_ATTEMPTS`.
+- `reconciliation.spec` — anniversary batch raises cached balance; batch
+  below reservations escalates affected `APPROVED` to `REVIEW_REQUIRED`;
+  batch does not touch unmentioned keys; pull reconcile applies HCM
+  snapshot; active-keys reconcile iterates.
+- `balance-integrity.spec` — back-to-back filings that together exceed
+  balance, only the first succeeds; cancel releases the reservation and
+  the balance can be re-filed.
 
-### 9.3 End-to-end tests (HTTP, mock HCM server)
+### 9.3 End-to-end tests (HTTP stack via `supertest`, mock HCM)
 
-- Employee files → manager approves → mock HCM receives consume call → state
-  becomes `CONSUMED`.
-- Mock HCM returns 500 for N attempts then 200 — we eventually converge.
-- Mock HCM sends anniversary batch — balance rises without disturbing open
-  requests.
-- Signed webhook rejected when signature bad or timestamp stale.
-- AuthZ: employee cannot read another employee's balances; manager cannot
-  approve outside their reports.
+- `time-off-api.e2e-spec` — `/health` public; `/me/balances` requires
+  JWT (401 shape); creation, 409 on insufficient balance, idempotency
+  key replay, ownership check on `GET /me/requests/:id`, manager-reports
+  check on approve, cancel, validation shape incl. whitelist.
+- `hcm-webhook.e2e-spec` — good signature applies the batch;
+  bad/stale signature → 401 with `INVALID_SIGNATURE`; DTO failures after
+  good signature → 400 with `VALIDATION_ERROR`; **signature is checked
+  before DTO validation** so a bad signature never leaks field names.
+- `admin-api.e2e-spec` — non-admin 403; reconcile with/without key;
+  outbox list/filter/drain/retry; manager lists + rejects with reason.
 
 ### 9.4 Coverage target
 
@@ -584,11 +646,15 @@ three tiers:
 
 ## 10. Future Work (out of scope for this exercise)
 
-- Move to Postgres + Redis for horizontal scale.
-- Replace outbox cron with a proper message queue (SQS/Kafka).
-- Support partial-day requests (hours).
-- Carry-over / accrual policy engine (currently handled entirely in HCM).
-- Multi-tenant isolation at row level.
-- OpenAPI/Swagger spec generation (not wired in this exercise).
-- Scheduled pull-path reconciliation job.
-- Rate limiting middleware.
+- Move to Postgres + Redis for horizontal scale; move the outbox worker
+  behind a real message queue (SQS / Kafka) for longer retry horizons
+  than the 2-minute worst-case we have today.
+- Scheduled pull reconciliation (the `reconcileActive` method is already
+  in place; only a `@Cron()` wrapper is missing).
+- Rate-limiting middleware (per-principal sliding window).
+- Env-schema validation at boot (Zod or equivalent).
+- Structured JSON logs, request-id middleware, Prometheus counters.
+- `HcmClient.releaseBalance` endpoint if / when the HCM contract adds
+  server-driven cancellation.
+- Partial-day requests (hours), carry-over / accrual policies (currently
+  handled entirely in HCM), multi-tenant isolation, OpenAPI/Swagger spec.

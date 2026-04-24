@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import {
   BalanceNotFoundError, ConflictError, ForbiddenDomainError,
-  InsufficientBalanceError, ValidationError,
+  InsufficientBalanceError,
 } from '../common/errors.js';
 import { newCorrelationId, newExternalRequestId, newRequestId } from '../common/ids.js';
 import { countDaysInclusive } from './dates.js';
@@ -30,8 +30,9 @@ export class TimeOffService {
    * on the BEGIN IMMEDIATE lock and see each other's reservations.
    */
   createRequest({ actor, input }) {
+    // `countDaysInclusive` throws a `ValidationError` on malformed / inverted
+    // dates; otherwise returns ≥ 1 by construction.
     const days = countDaysInclusive(input.startDate, input.endDate);
-    if (days <= 0) throw new ValidationError('days must be positive');
     const id = newRequestId();
     const correlationId = newCorrelationId();
     const now = this._clock.now();

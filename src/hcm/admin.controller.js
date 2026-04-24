@@ -1,7 +1,7 @@
 import {
-  Body, Controller, Get, Inject, Param, Post, Query, UseGuards,
+  Body, Controller, Get, Inject, Param, Post, Query,
 } from '@nestjs/common';
-import { JwtAuthGuard, Roles } from '../auth/auth.guard.js';
+import { Roles } from '../auth/auth.guard.js';
 import { ValidationError } from '../common/errors.js';
 import { buildValidationPipe } from '../common/validation.js';
 import { ReconcileDto } from './dto/reconcile.dto.js';
@@ -11,8 +11,8 @@ import { ReconciliationService } from './reconciliation.service.js';
 
 const validateReconcile = buildValidationPipe({ expectedType: ReconcileDto });
 
+// JwtAuthGuard runs globally via APP_GUARD; only @Roles('admin') needed here.
 @Controller('/admin')
-@UseGuards(JwtAuthGuard)
 export class AdminController {
   constructor(
     @Inject(HcmOutboxService) outbox,

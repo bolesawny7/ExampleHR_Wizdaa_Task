@@ -27,13 +27,14 @@ export async function buildTestApp(overrides = {}) {
   })
     .overrideProvider(ConfigService)
     .useValue(new ConfigService({
+      // NODE_ENV=test already disables background jobs by default
+      // (see ConfigService).
       NODE_ENV: 'test',
       JWT_SECRET: 'test-secret',
       DATABASE_PATH: ':memory:',
       HCM_BASE_URL: 'http://mock',
       HCM_WEBHOOK_SECRET: 'test-webhook-secret',
       HCM_API_KEY: 'test-api-key',
-      DISABLE_BACKGROUND_JOBS: '1',
       OUTBOX_MAX_ATTEMPTS: '4',
       ...overrides,
     }))

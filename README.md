@@ -1,33 +1,14 @@
 # Time-Off Microservice
 
-A backend microservice that manages the full lifecycle of employee time-off
-requests while keeping balances in sync with a downstream HCM (Workday, SAP,
-…) which remains the system of record.
+Backend microservice that manages the full lifecycle of employee time-off
+requests while keeping balances in sync with a downstream HCM (Workday,
+SAP, …) which remains the system of record.
 
 Built with **NestJS + JavaScript (ES2022, Babel) + SQLite (better-sqlite3)**.
 
-> **Start here:** the architecture, design decisions, challenges and test
-> strategy are described in depth in [`TRD.md`](./TRD.md).  This README is the
-> operator's guide.
-
-## Features
-
-- REST API for employees, managers, and admins/ops.
-- Balance integrity invariants enforced under concurrency
-  (`BEGIN IMMEDIATE` transactions on SQLite).
-- Transactional **outbox** to HCM with exponential-backoff retries.
-- Drift detection and healing via three channels: HCM push (signed batch
-  webhook), just-in-time pre-consume check in the outbox worker, and
-  on-demand pull via `POST /admin/reconcile`.  A scheduled pull is a
-  documented future addition (TRD §10); not wired here.
-- Signed HCM webhook (HMAC-SHA256, replay-protected by timestamp).
-- JWT bearer authentication + role-based authorization.
-- Request idempotency keyed by `(Idempotency-Key, endpoint, actor)`.
-- Append-only audit log of every state transition and every HCM call.
-- In-process **mock HCM** for tests and a runnable mock HCM server for
-  manual exploration.
-- Unit, integration, and end-to-end tests with line coverage ≥ 90 %
-  enforced by Jest thresholds.
+> Architecture, design decisions, challenges, and test strategy live in
+> [`TRD.md`](./TRD.md).  This README is the operator's guide: how to run
+> and test the thing.
 
 ## Repo layout
 
@@ -41,70 +22,76 @@ Built with **NestJS + JavaScript (ES2022, Babel) + SQLite (better-sqlite3)**.
 ├── src/
 │   ├── main.js                 <- bootstrap
 │   ├── app.module.js
-│   ├── auth/                   <- JWT + guard
+│   ├── auth/                   <- JWT guard + role / public decorators
 │   ├── balances/               <- balance queries, HCM snapshot applier
-│   ├── common/                 <- audit, clock, idempotency, errors, health
+│   ├── common/                 <- audit, clock, idempotency, errors, health,
+│   │                              validation-pipe factory, exceptions filter
 │   ├── config/                 <- env-driven config
 │   ├── database/               <- schema + better-sqlite3 wrapper
-│   ├── hcm/                    <- client, webhook, outbox, reconciliation
-│   └── time-off/               <- state machine, service, controller
+│   ├── hcm/                    <- client, webhook + signature guard, outbox,
+│   │                              reconciliation, admin controller
+│   └── time-off/               <- state machine, service, controller, DTOs
 └── test/
     ├── helpers/app.js          <- builds a full test app with mock HCM
     ├── mocks/hcm-mock-server.js<- programmable HCM fake (in-proc + HTTP)
-    ├── unit/                   <- fast, pure logic tests
-    ├── integration/            <- DB + service layer, concurrency races
+    ├── unit/                   <- pure logic + narrow DB tests
+    ├── integration/            <- DB + service layer, mock HCM
     └── e2e/                    <- full HTTP stack via supertest
 ```
 
 ## Requirements
 
-- Node.js **18 or newer** (tested on v18 and v25).
-- npm 9+ (other package managers should work but only npm is tested).
-- No external services — SQLite is embedded, and the HCM is mocked.
+- **Node.js 18+** (uses global `fetch`).  Tested on v18 and v25.
+- **npm**.  The repo's `.npmrc` pins the public registry in case your
+  global npm is pointed elsewhere.
+
+No external services: SQLite is embedded, the HCM is mocked in tests and
+by an optional standalone server for manual exploration.
 
 ## Setup
 
 ```bash
-# clone & enter the repo, then:
 npm install
-cp .env.example .env        # only needed if you want to run the server
+cp .env.example .env   # only needed if you intend to run the server
 ```
 
-> If your npm is pointed at a private registry that can't resolve public
-> packages, the included `.npmrc` overrides it to the public `registry.npmjs.org`.
+## Run
 
-## Running the service
+### Dev
 
-### Dev mode (auto-reload, in-memory mock HCM **not** included)
+Two terminals.  In one, start the mock HCM on `:4000`:
 
 ```bash
-# 1) Start a mock HCM in one terminal:
-npm run mock:hcm     # listens on :4000 by default
-# 2) Start the service in another terminal:
-JWT_SECRET=$(openssl rand -hex 32) HCM_WEBHOOK_SECRET=$(openssl rand -hex 32) \
-  npm run start:dev
-# service listens on http://localhost:3000
+npm run mock:hcm
 ```
 
-### Production-style build
+In the other, start the service on `:3000` with fresh secrets:
 
 ```bash
-npm run build       # transpiles src/ → dist/
+export JWT_SECRET=$(openssl rand -hex 32)
+export HCM_WEBHOOK_SECRET=$(openssl rand -hex 32)
+npm run start:dev
+```
+
+### Build + prod
+
+```bash
+npm run build
 NODE_ENV=production npm run start:prod
 ```
 
-All configuration is through environment variables; see `.env.example` for
-the full list (port, JWT secret, HCM secrets, outbox tuning).
+All configuration is via environment variables; see `.env.example` for
+the canonical list.
 
-### Quick smoke
+### Smoke the running service
 
-Health check:
+Health:
 
 ```bash
 curl http://localhost:3000/health
 ```
 
-Mint a test JWT and call a protected endpoint:
+Mint a test JWT and hit a protected route:
 
 ```bash
 export TOKEN=$(node -e "console.log(require('jsonwebtoken').sign(
@@ -122,105 +109,101 @@ node -e "
     batchId:'B-1',
     asOf: new Date().toISOString(),
     balances: [{
-      employeeId:'E-1', locationId:'LOC-MAD-01', leaveType:'ANNUAL', balance:15
+      employeeId:'E-1', locationId:'LOC-MAD-01', leaveType:'ANNUAL', balance:15,
     }],
   });
   const ts = Date.now();
   console.log('TS=' + ts);
   console.log('SIG=' + sign(process.env.HCM_WEBHOOK_SECRET, ts, body));
   console.log('BODY=' + body);
-" | tee /tmp/hcm.env
-# then
+" > /tmp/hcm.env
 source /tmp/hcm.env
 curl -X POST -H 'content-type: application/json' \
      -H "X-Hcm-Timestamp: $TS" -H "X-Hcm-Signature: $SIG" \
      --data "$BODY" http://localhost:3000/hcm/webhooks/batch
 ```
 
-## Running the tests
+## Test
 
 ```bash
-npm test              # all tests, serial, 116 cases
-npm run test:unit     # fast pure-logic tests
+npm test               # all tests, serial
+npm run test:unit
 npm run test:integration
 npm run test:e2e
-npm run test:cov      # with coverage (html+lcov in coverage/)
+npm run test:cov       # with coverage (text + html + lcov in coverage/)
 ```
 
-The test strategy is described in `TRD.md §9`.  Highlights:
+Jest enforces **≥ 90 %** on statements / lines / functions and **≥ 80 %**
+on branches.  The test catalogue is documented in
+[`TRD.md §9`](./TRD.md#9-testing-strategy) — do not duplicate that list
+here, it drifts.
 
-- **Unit** — state machine transitions, date math, signature util, balance
-  math, idempotency store, JWT, outbox backoff, HcmClient error mapping,
-  repositories.
-- **Integration** — full request lifecycle (create → approve → outbox →
-  HCM consume); HCM transient retries; HCM permanent failure;
-  reconciliation of anniversary bonuses; negative-drift escalation to
-  `REVIEW_REQUIRED`; sequential race invariant (balance never negative);
-  outbox max-attempts → DEAD.
-- **E2E** — HTTP layer end-to-end via `supertest`, including JWT auth,
-  role guards, idempotency key replay, webhook signature verification
-  (good/bad/stale), and admin endpoints.
+## API surface
 
-Representative output:
+Full contract and payload shapes in [`TRD.md §6`](./TRD.md#6-api-rest).
+At a glance:
 
-```
-Test Suites: 20 passed, 20 total
-Tests:       ~130 passed
-Coverage:    Stmts 93 % | Branches 82 % | Funcs 96 % | Lines 95 %
-```
+| Actor    | Method | Path                              | Purpose                                  |
+|----------|--------|-----------------------------------|------------------------------------------|
+| employee | `GET`  | `/me/balances`                    | Effective balances                       |
+| employee | `POST` | `/me/requests`                    | File request (accepts `Idempotency-Key`) |
+| employee | `GET`  | `/me/requests`, `/me/requests/:id`| Read own                                 |
+| employee | `POST` | `/me/requests/:id/cancel`         | Cancel own                               |
+| manager  | `GET`  | `/manager/requests`               | Pending approvals                        |
+| manager  | `POST` | `/manager/requests/:id/approve`   | Approve                                  |
+| manager  | `POST` | `/manager/requests/:id/reject`    | Reject with reason                       |
+| admin    | `POST` | `/admin/reconcile`                | Reconcile one key, or active keys        |
+| admin    | `GET`  | `/admin/outbox`                   | Outbox inspection                        |
+| admin    | `POST` | `/admin/outbox/:id/retry`         | Force retry a dead / stalled row         |
+| admin    | `POST` | `/admin/outbox/drain`             | Drain one tick on demand                 |
+| HCM      | `POST` | `/hcm/webhooks/batch`             | Signed batch ingress                     |
+| HCM      | `POST` | `/hcm/webhooks/balance`           | Signed single-row update                 |
+| —        | `GET`  | `/health`                         | Liveness + readiness                     |
 
-Coverage thresholds enforced by Jest (see `package.json`).
+## What this service guarantees
 
-## API surface (summary)
+For the "why" and the rejected alternatives, see the TRD.  The one-screen
+summary:
 
-See `TRD.md §6` for the full contract; briefly:
-
-| Actor | Method | Path | Purpose |
-|-------|--------|------|---------|
-| employee | `GET`  | `/me/balances` | Effective balances |
-| employee | `POST` | `/me/requests` | File request (Idempotency-Key) |
-| employee | `GET`  | `/me/requests`, `/me/requests/:id` | Read own |
-| employee | `POST` | `/me/requests/:id/cancel` | Cancel own |
-| manager | `GET`  | `/manager/requests` | Pending approvals |
-| manager | `POST` | `/manager/requests/:id/approve` | Approve |
-| manager | `POST` | `/manager/requests/:id/reject` | Reject (reason) |
-| admin | `POST` | `/admin/reconcile` | Reconcile key or active keys |
-| admin | `GET`  | `/admin/outbox` | Outbox inspection |
-| admin | `POST` | `/admin/outbox/:id/retry` | Force retry |
-| admin | `POST` | `/admin/outbox/drain` | Drain now |
-| HCM | `POST` | `/hcm/webhooks/batch` | Signed batch ingress |
-| HCM | `POST` | `/hcm/webhooks/balance` | Signed single update |
-| — | `GET` | `/health` | Liveness + readiness |
-
-## Security checklist
-
-See `TRD.md §C6` for rationale.
-
-- [x] JWT required on every user-facing endpoint (guard runs globally).
-- [x] Role-based access checked *and* data-ownership checked (an employee
-      cannot read / cancel another's request; a manager cannot approve
-      outside their reports).
-- [x] HCM webhook signature: HMAC-SHA256 over `timestamp.rawBody`, ±5-min
-      replay window, constant-time compare.
-- [x] DTO validation with `class-validator` + `whitelist` +
-      `forbidNonWhitelisted` — no unknown fields reach domain services.
-- [x] All SQL via `better-sqlite3` prepared statements; no interpolation.
-- [x] `helmet()` for common HTTP hardening headers.
-- [x] Secrets loaded from env and never logged; failure if JWT_SECRET unset
-      outside tests.
-- [x] Audit log of every mutation (append-only, `created_at`-indexed).
-- [x] Idempotency keys scoped to `(key, endpoint, actor)` to prevent
-      cross-actor or cross-endpoint replay.
-- [x] PII minimization: only opaque IDs are stored/logged by this service.
+- **Balance integrity:** `effective = cached_hcm_balance − Σ open
+  reservations`.  The reservation is committed inside a `BEGIN IMMEDIATE`
+  transaction that re-checks the invariant, so the effective balance is
+  never negative from our side.
+- **Crash-safe HCM delivery:** approval writes the state change and the
+  outbox row in the same transaction.  A background worker drains the
+  outbox with exponential-backoff retries; permanent HCM failures release
+  the reservation and move the request to `HCM_FAILED`.
+- **Drift handling:** inbound signed webhooks from HCM replace the cached
+  balance without touching reservations; if the new HCM balance is below
+  open reservations we flag affected `APPROVED` requests
+  `REVIEW_REQUIRED` and emit a `NEGATIVE_DRIFT` audit event.  Operators
+  can also pull on demand via `POST /admin/reconcile`.
+- **AuthN / AuthZ:** JWT bearer + role check + service-layer
+  data-ownership check (a manager cannot approve requests outside their
+  reports, an employee cannot read other employees' requests).
+- **Webhook auth:** HMAC-SHA256 over `${timestamp}.${rawBody}`, ±5-minute
+  replay window, checked in a Nest guard that runs *before* DTO
+  validation so a bad signature never leaks field shapes.
+- **Idempotency:** `Idempotency-Key` scoped by `(key, endpoint, actor)`;
+  outbound HCM calls carry a stable `externalRequestId`.
+- **Consistent 4xx shape:** every error (ours or `ValidationPipe`'s) is
+  routed through `buildValidationPipe()` + `AllExceptionsFilter` so
+  clients branch on stable `error` codes, not on English messages.
 
 ## Trade-offs & future work
 
-See `TRD.md §10`.  The biggest deliberate trade-off is using SQLite rather
-than Postgres: this simplifies setup, makes the race-condition invariant
-testing trivial (single writer), and is appropriate at the expected QPS for
-one tenant.  Horizontal scale requires a migration — documented — to
-Postgres + Redis (for idempotency + outbox coordination) and a real message
-bus.
+See [`TRD.md §10`](./TRD.md#10-future-work-out-of-scope-for-this-exercise).
+
+The two biggest deliberate choices worth calling out up front:
+
+1. **SQLite instead of Postgres.**  At one process it gives us
+   serialisable writes for free and zero setup cost.  The migration path
+   to Postgres + Redis is documented and the repository pattern keeps
+   that cost bounded.
+2. **No background scheduler for reconciliation.**  The `reconcileActive`
+   method is in place; wiring a `@Cron` around it is a one-file change
+   when production traffic justifies it.  Adding an always-on background
+   job *today* would be pure ceremony.
 
 ## License
 
